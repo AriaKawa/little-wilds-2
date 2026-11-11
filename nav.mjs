@@ -1,7 +1,7 @@
 // How creatures get around: a map of what each ground cell is (open, a stream to hop, a pond to walk
 // around, or something solid like rock, a trunk or a house), and a little steering that walks toward a goal
 // and feels its way round whatever is in the way. Positions are in cells.
-import { CW, CH, CELL, TW, TREE } from './world.mjs?v=31';
+import { CW, CH, CELL, TW, TREE } from './world.mjs?v=32';
 
 export const OPEN = 0, STREAM = 1, POND = 2, SOLID = 3;
 const POND_T = 178; // waterT at or above this is a pond; below it is a stream.

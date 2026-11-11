@@ -1,9 +1,9 @@
-import { makeWorld, ZONES, LANDS, CN, CW, CH, CELL, hash } from './world.mjs?v=31';
-import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands } from './sim.mjs?v=31';
-import { createLand } from './land.mjs?v=31';
-import { createRenderer, GRASS_STYLES } from './render.mjs?v=31';
-import { createAudio } from './audio.mjs?v=31';
-import { spiritFace, useDeerSheet } from './critters.mjs?v=31';
+import { makeWorld, ZONES, LANDS, REGIONS, CN, CW, CH, CELL, hash } from './world.mjs?v=32';
+import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=32';
+import { createLand } from './land.mjs?v=32';
+import { createRenderer, GRASS_STYLES } from './render.mjs?v=32';
+import { createAudio } from './audio.mjs?v=32';
+import { spiritFace, useDeerSheet } from './critters.mjs?v=32';
 
 const KEY = 'little-wilds-2-v2', CARDS_KEY = 'little-wilds-2-postcards', SOUND_KEY = 'little-wilds-2-muted', VOLUME_KEY = 'little-wilds-2-volume', GRASS_KEY = 'little-wilds-2-grass', MUSIC_KEY = 'little-wilds-2-music';
 const $ = id => document.getElementById(id);
@@ -39,6 +39,8 @@ function jot(key) {
   else toast(`New in your journal: ${journalLabel(key)} · +${fmt(gift)} seeds`, true);
 }
 const landBloomed = l => ZONES.filter(z => z.land === l).every(z => s.zones[z.id].bloomed);
+// A region (Frostmere, Mistfen and Ember Basin each cover two cells) counts once all its cells are done.
+const regionOf = l => REGIONS.find(R => R.lands.includes(l)), regionDone = l => regionOf(l).lands.every(q => landDone(s, q)), regionBloomed = l => regionOf(l).lands.every(landBloomed);
 const PAT_KINDS = ['deer', 'fawn', 'rabbit'];
 // Taps are for fun, not farming: an animal gives a small gift at most once in a while, and only a few taps a
 // minute pay at all (a pocket of four that refills one every twenty seconds). Extra taps still get their pat.
@@ -77,7 +79,7 @@ function attach() {
   view.onSplash = (pan, near, big) => audio.splash(pan, near, big);
   view.onSeen = key => jot(key);
   // Lands already restored or flourishing before the journal existed are written in quietly.
-  LANDS.forEach((_, l) => { if (landDone(s, l)) s.journal['land' + l] = 1; if (landBloomed(l)) s.journal['bloom' + l] = 1; });
+  LANDS.forEach((_, l) => { if (regionDone(l)) s.journal['land:' + regionOf(l).name] = 1; if (regionBloomed(l)) s.journal['bloom:' + regionOf(l).name] = 1; });
   buildDock();
   currentZone = firstOpen(); view.focusZone(currentZone, true);
 }
@@ -127,7 +129,7 @@ function renderHint() {
   else if (!s.revivedAny && s.age > 10 && !s.zones[0].done) text = 'Hold on a dead tree or stone to bring it back';
   else if (s.spirits.length === 1 && s.seeds >= spiritCost(s, 0)) text = 'Those seeds can wake another Mossling';
   else if (!s.bought && s.seeds >= cheapestGlade()) text = 'You can afford to wake a new glade. Click its sign';
-  else if (!s.spirits.some(a => a.type === 2) && s.zones.some(z => z.done && z.water < 0) ) text = spiritOpen(s, 2) ? 'Riverbeds stay dry until a Rainwisp brings water' : `Riverbeds stay dry until a Rainwisp comes, after ${SPIRITS[2].need} restored glades`;
+  else if (!s.spirits.some(a => a.type === 2) && s.zones.some((z, i) => z.done && z.water < 0 && hasWater(world, i)) ) text = spiritOpen(s, 2) ? 'Riverbeds stay dry until a Rainwisp brings water' : `Riverbeds stay dry until a Rainwisp comes, after ${SPIRITS[2].need} restored glades`;
   if (preview) text = '';
   h.hidden = !text; if (text) h.textContent = text;
 }
@@ -174,7 +176,7 @@ function showTitle() {
 }
 function titleRecords() {
   const glades = s.zones.filter(z => z.done).length, lands = mapsDone(s);
-  $('title-records').innerHTML = `<span><small>Seeds</small><b><i class="ico ico-seed"></i>${fmt(s.seeds)}</b></span><span><small>Earning</small><b>${rate >= 1 ? fmt(rate) + '/s' : '–'}</b></span><span><small>Glades restored</small><b>${glades} / ${ZONES.length}</b></span><span><small>Lands restored</small><b>${lands} / ${LANDS.length}</b></span>`;
+  $('title-records').innerHTML = `<span><small>Seeds</small><b><i class="ico ico-seed"></i>${fmt(s.seeds)}</b></span><span><small>Earning</small><b>${rate >= 1 ? fmt(rate) + '/s' : '–'}</b></span><span><small>Glades restored</small><b>${glades} / ${ZONES.length}</b></span><span><small>Lands restored</small><b>${REGIONS.filter(R => R.lands.every(l => landDone(s, l))).length} / ${REGIONS.length}</b></span>`;
 }
 function hideTitle() {
   if (!titleOn) return;
@@ -363,9 +365,9 @@ function handle(ev, now, quiet = false) {
       const justOpened = SPIRITS.find(d => d.need === doneCount(s));
       if (justOpened) setTimeout(() => toast(`A new spirit has come: ${justOpened.name}.`), 5400);
     }
-    if (e.t === 'bloom') { const l = ZONES[e.zone].land; if (landBloomed(l)) jot('bloom' + l); }
+    if (e.t === 'bloom') { const l = ZONES[e.zone].land; if (regionBloomed(l)) jot('bloom:' + regionOf(l).name); }
     if (e.t === 'bloom' && !quiet) { audio.chime(); view.sweep(e.zone, '#ffc6dd'); view.glow(e.zone, '255,190,220'); banner(`${ZONES[e.zone].name} is flourishing`, 'New life has come to graze.'); }
-    if (e.t === 'valley') { jot('land' + e.land); save(); if (!quiet) setTimeout(() => { if (!$('modal').open) celebrate(e.land); }, 7000); }
+    if (e.t === 'valley') { if (regionDone(e.land)) jot('land:' + regionOf(e.land).name); save(); if (!quiet) setTimeout(() => { if (!$('modal').open) celebrate(e.land); }, 7000); }
   }
 }
 function returnFrom(seconds) {
@@ -423,9 +425,9 @@ addEventListener('pagehide', save);
 async function main() {
   try {
     await nextFrame();
-    const [worldImg, spirits, landmarks, pets, flyers, deer, fish, fawn, folk, raincloud, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/landmarks.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=31').catch(() => null), load('assets/fish.png?v=31').catch(() => null), load('assets/fawn.png?v=31').catch(() => null), load('assets/folk.png?v=31').catch(() => null), load('assets/raincloud.png?v=31').catch(() => null), ...LANDS.slice(1).map((_, n) => load(`assets/biome-${n + 1}.png?v=31`).catch(() => null))]);
+    const [worldImg, spirits, landmarks, pets, flyers, deer, fish, fawn, folk, raincloud, places, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/landmarks.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=32').catch(() => null), load('assets/fish.png?v=32').catch(() => null), load('assets/fawn.png?v=32').catch(() => null), load('assets/folk.png?v=32').catch(() => null), load('assets/raincloud.png?v=32').catch(() => null), load('assets/places.png?v=32').catch(() => null), ...LANDS.slice(1).map((_, n) => load(`assets/biome-${n + 1}.png?v=32`).catch(() => null))]);
     if (deer) useDeerSheet(deer, fawn);
-    images = { world: worldImg, spirits, landmarks, pets, flyers, fish, folk, raincloud, biomes: [null, ...biomes] };
+    images = { world: worldImg, spirits, landmarks, pets, flyers, fish, folk, raincloud, places, biomes: [null, ...biomes] };
     await buildWorld();
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch { raw = null; }

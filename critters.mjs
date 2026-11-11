@@ -338,7 +338,8 @@ export function duckCanvas(hen, frame, flip) {
   return c;
 }
 // Each land's own creature takes the deer's place there; rabbits are everywhere.
-export const NATIVE = [null, 'fox', 'lynx', 'tortoise', 'otter', 'ram', 'crab', 'toadling', 'hedgehog'];
+// By land cell: the second cells of Frostmere, Ember Basin and Mistfen share their region's creature; the island has two.
+export const NATIVE = [null, 'fox', 'lynx', 'tortoise', 'otter', 'lynx', 'fox', 'otter', 'hedgehog', 'toadling', 'crab'];
 
 const made = new Map();
 export const WALK_FRAMES = 8;

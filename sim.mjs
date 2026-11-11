@@ -1,11 +1,11 @@
 // Rules of restoration. No DOM: runs in the game, offline catch-up and the pacing test alike.
 // One field covers the whole continent; glades are bought outward from the middle, and one army of spirits works all of it.
-import { CW, CN, LCW, LCH, LCN, ZONES, LANDS } from './world.mjs?v=31';
-import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=31';
+import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=32';
+import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=32';
 // The ground map spirits and animals walk by, rebuilt when a different set of planted trees is in play.
 export function navOf(s, w) { if (!w.nav || w.navTrees !== s.trees) { buildNav(w); for (const t of s.trees) markTree(w, t); w.navTrees = s.trees; } return w.nav; }
 
-const WORLD_VERSION = 10, FIELD_VERSION = 4; // objects / the shape of the glades
+const WORLD_VERSION = 11, FIELD_VERSION = 5; // objects / the shape of the glades
 export const SPIRIT_CAP = 60;
 // How fast a pond fills (share of a full pond is .3): on its own, in a shower, and per Rainwisp raining into it.
 export const POND_TRICKLE = .00025, POND_RAIN = .0012, POND_WISP = .005;
@@ -32,16 +32,20 @@ export const landTouched = (s, l) => s.levels[l] !== undefined;
 export const upgradeMax = (s, u) => u.max + (u.more || 0) * mapsDone(s);
 // Restored lands keep earning on their own.
 export const landIncome = (s, l) => landDone(s, l) ? 40 * Math.pow(1.6, s.levels[l] || 0) : 0;
-export const income = s => LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) * journalBoost(s);
+// The farm and the fishing dock earn seeds of their own once restored.
+export const PLACE_INCOME = { farm: 12, dock: 8 };
+let places = [];
+const placeIncome = s => places.reduce((a, [id, kind]) => a + (s.objHp?.[id] === 0 ? PLACE_INCOME[kind] : 0), 0);
+export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s);
 
 // The field journal: creatures met, lands brought back and small moments. Each new entry gives a little gift of
 // seeds; each finished page adds 10% to everything the restored lands earn, for good.
 export const JOURNAL = [
   { name: 'Creatures', entries: [['deer', 'A spirit deer'], ['fawn', 'A spirit fawn'], ['rabbit', 'A moss rabbit'],
-    ...LANDS.map((L, l) => L.native ? ['native' + l, L.native.label] : null).filter(Boolean),
+    ...LANDS.map((L, l) => L.native && lookOf(l) === l ? ['native' + l, L.native.label] : null).filter(Boolean),
     ['butterfly0', 'A sun butterfly'], ['butterfly1', 'A rose butterfly'], ['butterfly2', 'A sky butterfly'], ['bird0', 'A bluebird'], ['bird1', 'A robin'],
     ['duck', 'Ducks on the great lake'], ['fish', 'A leaping carp'], ['folk', 'A villager']] },
-  { name: 'Lands', entries: [...LANDS.map((L, l) => ['land' + l, `${L.name} restored`]), ...LANDS.map((L, l) => ['bloom' + l, `${L.name} flourishing`])] },
+  { name: 'Lands', entries: [...REGIONS.map(R => ['land:' + R.name, `${R.name} restored`]), ...REGIONS.map(R => ['bloom:' + R.name, `${R.name} flourishing`])] },
   { name: 'Moments', entries: [['rainwisp', 'A riverbed filled'], ['rain', 'A passing shower'], ['snow', 'Snowfall'], ['fireflies', 'Fireflies at night'],
     ['spring', 'Spring blossom'], ['summer', 'High summer'], ['autumn', 'Autumn leaves'], ['winter', 'A winter frost'], ['favour', 'A favour for a villager'], ['pat', 'A pat for every kind of animal']] },
 ];
@@ -145,7 +149,7 @@ export function newLand() {
     objHp: null, trees: [], age: 0, played: 0, last: Date.now(), touched: false, paused: false, journal: {}, favours: [],
   };
 }
-export const initObjects = (s, w) => { if (s.objHp?.length !== w.objects.length || s.wv !== WORLD_VERSION) { s.objHp = w.objects.map(o => s.zones[o.zone].done ? 0 : o.hp); if (s.wv !== WORLD_VERSION) s.zones.forEach(z => { if (z.done) z.sweep = 0; }); s.wv = WORLD_VERSION; } };
+export const initObjects = (s, w) => { places = w.objects.filter(o => o.place).map(o => [o.id, o.place]); if (s.objHp?.length !== w.objects.length || s.wv !== WORLD_VERSION) { s.objHp = w.objects.map(o => s.zones[o.zone].done ? 0 : o.hp); if (s.wv !== WORLD_VERSION) s.zones.forEach(z => { if (z.done) z.sweep = 0; }); s.wv = WORLD_VERSION; } };
 
 const levelOf = (s, z) => s.levels[ZONES[z].land] || 0, rankOf = (s, z) => s.zones[z].rank || 0;
 const toughness = (s, z) => (1 + rankOf(s, z) * 1.3) * (1 + levelOf(s, z) * .6);
@@ -236,7 +240,9 @@ function nearLists(s, w, a) {
 }
 // Where a riverbed first runs inside its own glade (its true head can sit out in the mist at the glade's edge).
 const heads = new WeakMap();
+export const hasWater = (w, id) => w.streams[id]?.length > 0 || w.ponds[id]?.r > 0;
 export function streamHead(w, id) {
+  if (!w.streams[id]?.length) return [w.ponds[id].x, w.ponds[id].y]; // a pond with no river: rain straight into it
   let m = heads.get(w); if (!m) heads.set(w, m = new Map());
   if (!m.has(id)) { const path = w.streams[id] || [], k = path.findIndex(([x, y]) => w.zone[Math.floor(y / 4) * CW + Math.floor(x / 4)] === id); m.set(id, path[Math.max(0, Math.min(path.length - 1, (k < 0 ? 0 : k) + 6))]); }
   return m.get(id);
@@ -246,7 +252,7 @@ function seek(s, w, a) {
   // Riverbeds stay dry until a Rainwisp comes: it drifts to the head of the nearest dry one and fills it.
   if (a.type === 2) {
     let best = -1, bd = Infinity;
-    s.zones.forEach((z, id) => { if (!z.open || z.water >= 0 || !w.streams[id]?.length) return; const p = streamHead(w, id), d = Math.hypot(p[0] / 4 - a.x, p[1] / 4 - a.y); if (d < bd) { bd = d; best = id; } });
+    s.zones.forEach((z, id) => { if (!z.open || z.water >= 0 || !hasWater(w, id)) return; const p = streamHead(w, id), d = Math.hypot(p[0] / 4 - a.x, p[1] / 4 - a.y); if (d < bd) { bd = d; best = id; } });
     if (best >= 0) { const p = streamHead(w, best); a.tx = p[0] / 4; a.ty = p[1] / 4; a.fill = best; return true; }
     // No dry beds: most of the time, go and rain into the nearest pond still filling (at most two wisps to a pond).
     if (Math.random() < .7) {
@@ -371,11 +377,13 @@ export function tick(s, w, dt, ev = [], slice = 0, of = 1) {
     if (z.water >= 0 && z.water < 1) {
       // The stream runs down its bed in a few seconds. The pond then fills slowly from what water reaches it:
       // a thin trickle from the stream on its own, more in a shower, and much more under a Rainwisp raining into it.
-      const before = z.water;
-      z.water = z.water < .7 ? Math.min(.7, z.water + dt / 9) : Math.min(1, z.water + dt * (POND_TRICKLE + (s.wx?.kind ? POND_RAIN : 0)));
-      const path = w.streams[id], p = path[Math.min(path.length - 1, Math.floor(z.water / .7 * path.length))];
-      if (z.water < .7) heal(s, w, p[0] / 4, p[1] / 4, 8, dt * 1.4, GREEN); // green runs along behind the water's head
-      else { const pond = w.ponds[id]; heal(s, w, pond.x / 4, pond.y / 4, (pond.r + 14) / 4, (z.water - before) / .3 * 1.35, GREEN); }
+      const before = z.water, path = w.streams[id], pond = w.ponds[id];
+      // A glade with no river of its own goes straight to its pond; one with no pond is full once its river runs.
+      if (z.water < .7 && !path.length) z.water = .7;
+      if (z.water >= .7 && !(pond.r > 0)) z.water = 1;
+      else z.water = z.water < .7 ? Math.min(.7, z.water + dt / 9) : Math.min(1, z.water + dt * (POND_TRICKLE + (s.wx?.kind ? POND_RAIN : 0)));
+      if (z.water < .7) { const p = path[Math.min(path.length - 1, Math.floor(z.water / .7 * path.length))]; heal(s, w, p[0] / 4, p[1] / 4, 8, dt * 1.4, GREEN); } // green runs along behind the water's head
+      else if (pond.r > 0 && z.water > before) heal(s, w, pond.x / 4, pond.y / 4, (pond.r + 14) / 4, (z.water - before) / .3 * 1.35, GREEN);
       if (Math.floor(z.water * 254) !== Math.floor(before * 254)) w.waterMoved?.(id);
     }
     if (!z.done && pct >= .97) completeZone(s, w, id, ev);
@@ -487,8 +495,14 @@ export function decode(text, w) {
     for (let n = 0; n < L; n++) o.atlas[n] = { h: '', zones: full(), trees: [], level: n };
   }
   if (o.v === 4) { if (o.zones.length !== 9) throw Error('Not a Little Wilds 2 save.'); return dryUnlessWisp(fromLands(o, w)); }
+  let raw = atob(o.h);
+  const oldCN = CW * (CH / 4 * 3);
+  if (o.zones.length === 81 && raw.length === oldCN) { // the map before the island: same cells, one row fewer
+    raw = raw + '\0'.repeat(CN - oldCN);
+    o.zones = [...o.zones, ...freshZones().slice(81)];
+    o.wv = 0; // lay every object out afresh
+  }
   if (o.zones.length !== ZONES.length) throw Error('Not a Little Wilds 2 save.');
-  const raw = atob(o.h);
   if (raw.length !== CN) throw Error('Bad land data.');
   o.h = new Float32Array(CN);
   for (let i = 0; i < CN; i++) o.h[i] = raw.charCodeAt(i) / 255;

@@ -1,7 +1,7 @@
 // The ground as one pixel canvas for the whole continent. Every texel keeps a small code for its grain,
 // shade and kind of ground; each land turns codes into colours through lookup tables, one per growth stage,
 // so the front line between dead and alive stays crisp and organic without a colour array per stage.
-import { TW, TH, LW, LH, CW, CH, CELL, fbm, noise, hash, LANDS, SEA, BEACH, ROCK, landAtTexel, hillShade } from './world.mjs?v=31';
+import { TW, TH, LW, LH, CW, CH, CELL, COLS as GRID_COLS, fbm, noise, hash, LANDS, SEA, BEACH, ROCK, landAtTexel, lookOf, EMPTY_CELLS, hillShade } from './world.mjs?v=32';
 
 const packed = (r, g, b) => (255 << 24) | (Math.max(0, Math.min(255, b)) << 16) | (Math.max(0, Math.min(255, g)) << 8) | Math.max(0, Math.min(255, r));
 const pack = c => packed(c[0], c[1], c[2]);
@@ -60,9 +60,11 @@ export async function createLand(w, progress = async () => {}) {
   const N = TW * TH, code = new Uint16Array(N), jitter = new Int8Array(N);
   // Slow, smooth noise is sampled on a coarse grid and blended; only grain, mottling and cracks are per texel.
   const G = 4, gw = LW / G + 2, gh = LH / G + 2, shadeG = new Float32Array(gw * gh), blotchG = new Float32Array(gw * gh), jitG = new Float32Array(gw * gh), cw2 = LW / 2 + 2, crackG = new Float32Array(cw2 * (LH / 2 + 2));
-  for (let id = 0; id < LANDS.length; id++) {
-    await progress(id);
-    const s = 1, ox = LANDS[id].col * LW, oy = LANDS[id].row * LH; // One seed and continent-wide coordinates, so the grain never jumps at a border.
+  // Every cell of the grid, the open-sea ones included.
+  const cells = [...LANDS.map(L => [L.col, L.row]), ...EMPTY_CELLS.map(k => [k % GRID_COLS, Math.floor(k / GRID_COLS)])];
+  for (let id = 0; id < cells.length; id++) {
+    if (id < LANDS.length) await progress(id);
+    const s = 1, ox = cells[id][0] * LW, oy = cells[id][1] * LH; // One seed and continent-wide coordinates, so the grain never jumps at a border.
     for (let gy = 0, k = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++, k++) {
       const x = ox + gx * G, y = oy + gy * G;
       shadeG[k] = hillShade(x, y); // Rolling hills, lit from the upper left.
@@ -82,7 +84,7 @@ export async function createLand(w, progress = async () => {}) {
           code[i] = EDGE | (e - 1) << 12 | Math.round(d * 15) << 8 | band << 6 | foam << 5 | gr << 4;
           continue;
         }
-        if (r && LANDS[id].road) {
+        if (r) {
           const rim = r === 1 && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([p, q]) => { const j = i + q * TW + p; return j >= 0 && j < N && !w.road[j]; }) ? 1 : 0;
           const pat = r === 2 ? (x % 5 === 0 ? 1 : 0) : r === 4 ? (y % 5 === 0 ? 1 : 0) : r === 3 ? (y % 5 < 2 ? 1 : 0) : 0;
           code[i] = ROAD | r << 8 | rim << 7 | pat << 6 | Math.min(3, Math.floor(noise(X / 4, Y / 4, s + 260) * 4)) << 4 | (grain > .95 ? 1 : 0) << 3;
@@ -124,7 +126,7 @@ export async function createLand(w, progress = async () => {}) {
     return ground[B][stage * STAGE + c];
   }
   function paint(cx, cy, dead = false, target = out) {
-    const x0 = cx * CHUNK, y0 = cy * CHUNK, f = view, L = landAtTexel(x0, y0);
+    const x0 = cx * CHUNK, y0 = cy * CHUNK, f = view, L = lookOf(landAtTexel(x0, y0));
     for (let y = y0; y < y0 + CHUNK; y++) {
       const fy = Math.min(CH - 1.001, Math.max(0, y / CELL - .5)), iy = Math.floor(fy), ty = fy - iy;
       for (let x = x0, i = y * TW + x0; x < x0 + CHUNK; x++, i++) {

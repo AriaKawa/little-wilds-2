@@ -1,9 +1,9 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, SHRINK, hillShade } from './world.mjs?v=31';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=31';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=31';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=31';
-import { steer, standable, overWater, escape } from './nav.mjs?v=31';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=32';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=32';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=32';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=32';
+import { steer, standable, overWater, escape } from './nav.mjs?v=32';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -172,8 +172,8 @@ export function createRenderer(canvas, world, land, images) {
   const fogG = fog.getContext('2d'), fogAlpha = ZONES.map(() => -1), revives = new Map(), rises = new Map(), baked = new Map(), floraDirty = new Uint8Array(FCOLS * FROWS).fill(1), fogSoft = document.createElement('canvas'), wisps = new Float32Array(CW * CH);
   fogSoft.width = CW; fogSoft.height = CH; const fogSoftG = fogSoft.getContext('2d');
   for (let i = 0; i < wisps.length; i++) wisps[i] = fbm((i % CW) / 11, Math.floor(i / CW) / 11, 91);
-  const glintSpots = ZONES.map(z => { const out = [], p = world.ponds[z.id]; for (let k = 0; k < 26; k++) { const a = hash(k, z.id, 3) * 6.28, r = Math.sqrt(hash(k, z.id, 5)) * p.r * .8; out.push([p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, hash(k, z.id, 7)]); } return out; });
-  const padSpots = ZONES.map(z => { const p = world.ponds[z.id]; return [0, 1, 2, 3].map(k => [p.x + (hash(k, z.id, 11) - .5) * p.r * 1.2, p.y + (hash(k, z.id, 13) - .5) * p.r * 1.1, hash(k, z.id, 17)]); });
+  const glintSpots = ZONES.map(z => { const out = [], p = world.ponds[z.id]; for (let k = 0; k < (p.r > 0 ? 26 : 0); k++) { const a = hash(k, z.id, 3) * 6.28, r = Math.sqrt(hash(k, z.id, 5)) * p.r * .8; out.push([p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, hash(k, z.id, 7)]); } return out; });
+  const padSpots = ZONES.map(z => { const p = world.ponds[z.id]; return (p.r > 0 ? [0, 1, 2, 3] : []).map(k => [p.x + (hash(k, z.id, 11) - .5) * p.r * 1.2, p.y + (hash(k, z.id, 13) - .5) * p.r * 1.1, hash(k, z.id, 17)]); });
 
   const seaSpots = [];
   for (let k = 0; k < 30000 && seaSpots.length < 900; k++) { const x = Math.floor(hash(k, 1, 61) * TW), y = Math.floor(hash(k, 2, 61) * TH); if (world.edge[y * TW + x] === SEA) seaSpots.push([x, y, hash(k, 3, 61), world.zone[(y >> 2) * CW + (x >> 2)]]); }
@@ -246,7 +246,7 @@ export function createRenderer(canvas, world, land, images) {
   // Where an object's art comes from: [image, x, y, width, height] in that image.
   function artSrc(o, frame) {
     const b = images.biomes[o.art], cell = (img, n) => [img, n % 4 * 96, (n >> 2) * 96, 96, 96];
-    if (o.local && b) return cell(b, frame);
+    if (o.place && images.places) return cell(images.places, frame);
     if (o.mark) return cell(images.landmarks, frame);
     if (b && BIOME[frame] !== undefined) return frame <= KIND_BLOSSOM ? treeBuild(cell(b, BIOME[frame]), Math.imul(o.id + 7, 2654435761) >>> 30) : cell(b, BIOME[frame]);
     return [images.world, frame % 4 * SIZE, Math.floor(frame / 4) * SIZE, SIZE, SIZE];
@@ -446,7 +446,7 @@ export function createRenderer(canvas, world, land, images) {
     const night = clamp((Math.cos((s.age / 480) % 1 * 6.283) * -1 - .35) / .65, 0, 1) > .4;
     for (const c of critters) if (PETS[c.kind]) { if (!s.paused) stepPet(s, c, dt, night); const x = c.x, y = c.y; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, c }); }
     for (const t of s.trees) { const y = t.y * CELL; if (t.x * CELL > lx && t.x * CELL < hx && y > ly && y < hy) items.push({ y, t }); }
-    for (const f of folk) { if (!s.paused) stepFolk(f, dt); if (f.x > lx && f.x < hx && f.y > ly && f.y < hy) items.push({ y: f.y, f }); }
+    for (const f of folk) { if (!s.paused) stepFolk(f, dt); if (f.x > lx && f.x < hx && f.y > ly && f.y < hy) items.push({ y: f.sortY ?? f.y, f }); }
     items.sort((a, b) => a.y - b.y);
     const atlas = images.world, spirits = images.spirits, tNow = time / 1000;
     const art = drawArt;
@@ -515,7 +515,7 @@ export function createRenderer(canvas, world, land, images) {
       for (const [x, y, ph] of glintSpots[id]) { const b = Math.sin(t * 1.4 + ph * 40); if (b < .55) continue; ctx.fillStyle = `rgba(255,255,255,${(b - .55) * 1.3 * fill})`; ctx.fillRect(sx(x + Math.sin(t * .4 + ph * 9) * 2), sy(y), z * 3, z); }
       if (st.water >= 1) for (const [x, y, ph] of padSpots[id]) { ctx.fillStyle = '#4f9c5a'; ctx.fillRect(sx(x), sy(y), z * 3, z * 2); if (ph > .5) { ctx.fillStyle = '#ffc6dd'; ctx.fillRect(sx(x + 1), sy(y), z, z); } }
       const path = world.streams[id];
-      for (let k = 0; k < 16; k++) { const q = ((t * .06 + k / 16) % 1) * .7; if (q > st.water) continue; const p = path[Math.floor(q / .7 * (path.length - 1))]; ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(sx(p[0]), sy(p[1]), z * 2, z); }
+      for (let k = 0; k < (path.length ? 16 : 0); k++) { const q = ((t * .06 + k / 16) % 1) * .7; if (q > st.water) continue; const p = path[Math.floor(q / .7 * (path.length - 1))]; ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(sx(p[0]), sy(p[1]), z * 2, z); }
     });
   }
   // Ducks paddle about the great lake once it has filled: drifting to somewhere well out on the water, resting,
@@ -556,38 +556,35 @@ export function createRenderer(canvas, world, land, images) {
       ctx.globalAlpha = 1;
     }
   }
-  // Villagers: in Frostmere and Sunfall Coast, once a glade is restored, a few folk come out and stroll its dirt roads.
+  // Folk: once the farm in Sunfall Coast is restored a farmer works it, ambling up and down the path by it; once the
+  // dock on the great lake is mended a fisherman stands at its end with his rod.
   // assets/folk.png (ChatGPT art): rows are a farmer, a fisher and a snow villager; four stepping frames, then a wave.
   const folk = []; let folkAt = 0;
-  const roadsOf = new Map();
   const isRoad = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= TW || y >= TH) return false; const r = world.road[y * TW + x]; return r === 1 || r === 2 || r === 4; };
-  function roadsIn(zone) { // road texels in a glade, sampled
-    if (roadsOf.has(zone)) return roadsOf.get(zone);
-    const L = LANDS[ZONES[zone].land], ox = L.col * LW, oy = L.row * LH, list = [];
-    for (let y = oy; y < oy + LH; y += 3) for (let x = ox; x < ox + LW; x += 3) if (isRoad(x, y) && world.zone[Math.floor(y / CELL) * CW + Math.floor(x / CELL)] === zone) list.push([x, y]);
-    roadsOf.set(zone, list); return list;
-  }
   function spawnFolk(s, time) {
     if (time - folkAt < 1000) return; folkAt = time;
-    const want = [];
-    for (const z of ZONES) if (LANDS[z.land].village && s.zones[z.id].done && Math.hypot(z.px - cam.x, z.py - cam.y) < 900) for (let n = 0; n < 2; n++) want.push([z.id, n]);
-    for (let k = folk.length - 1; k >= 0; k--) if (!want.some(([z, n]) => folk[k].zone === z && folk[k].n === n)) folk.splice(k, 1);
-    for (const [zone, n] of want) {
-      if (folk.some(f => f.zone === zone && f.n === n)) continue;
-      const roads = roadsIn(zone); if (!roads.length) continue;
-      const [x, y] = roads[Math.floor(hash(zone, n, 61) * roads.length)], land = ZONES[zone].land;
-      folk.push({ zone, n, land, x, y, hx: 1, hy: 0, dir: 1, dist: 0, pause: 1 + n * 2, wave: 0, alpha: 0, row: n === 1 && hash(zone, 7, 63) > .5 ? 0 : land === 2 ? 2 : 1 });
+    for (const o of world.objects) {
+      if (!o.place) continue;
+      const here = s.objHp?.[o.id] === 0 && Math.hypot(o.x * CELL - cam.x, o.y * CELL - cam.y) < 1100, f = folk.find(q => q.place === o.id);
+      if (here && !f) {
+        const fisher = o.place === 'dock', x = o.x * CELL + (fisher ? o.size * .13 : 12), y = o.y * CELL + (fisher ? -o.size * .42 : 6);
+        folk.push({ place: o.id, kind: o.place, land: o.land, zone: o.zone, x, y, home: { x, y }, sortY: fisher ? o.y * CELL + 1 : null, hx: 1, hy: 0, dir: fisher ? -1 : 1, dist: 0, pause: 2, wave: 0, alpha: 0, row: fisher ? 1 : 0, stay: fisher });
+      }
+      if (!here && f) folk.splice(folk.indexOf(f), 1);
     }
   }
   const HEAD = [[1, 0], [.7, .7], [0, 1], [-.7, .7], [-1, 0], [-.7, -.7], [0, -1], [.7, -.7]];
   function stepFolk(f, dt) {
     f.alpha = Math.min(1, f.alpha + dt * .6);
     if (f.wave > 0) { f.wave -= dt; return; }
+    if (f.stay) return; // the fisherman keeps to his dock
     if (f.pause > 0) { f.pause -= dt; return; }
     if (Math.random() < dt * .08) { f.pause = 2 + Math.random() * 4; return; }
     const ahead = (hx, hy) => isRoad(f.x + hx * 3, f.y + hy * 3) && isRoad(f.x + hx * 6, f.y + hy * 6);
-    if (!ahead(f.hx, f.hy) || Math.random() < dt * .15) { // turn: the nearest heading that stays on the road, never straight back unless stuck
-      const opts = HEAD.filter(([hx, hy]) => ahead(hx, hy) && hx * f.hx + hy * f.hy > -.9).sort((a, b) => (b[0] * f.hx + b[1] * f.hy) - (a[0] * f.hx + a[1] * f.hy) + (Math.random() - .5) * 1.2);
+    const away = Math.hypot(f.x - f.home.x, f.y - f.home.y), back = away > 120 ? [(f.home.x - f.x) / away, (f.home.y - f.y) / away] : null; // the farmer stays near his farm
+    if (!ahead(f.hx, f.hy) || Math.random() < dt * .15 || (back && f.hx * back[0] + f.hy * back[1] < 0)) {
+      const score = ([hx, hy]) => (back ? hx * back[0] + hy * back[1] : hx * f.hx + hy * f.hy) + (Math.random() - .5) * .6;
+      const opts = HEAD.filter(([hx, hy]) => ahead(hx, hy) && (back || hx * f.hx + hy * f.hy > -.9)).sort((p, q) => score(q) - score(p));
       const h = opts[0] || [-f.hx, -f.hy]; f.hx = h[0]; f.hy = h[1];
       if (!opts.length) { f.pause = 1; return; }
     }
@@ -602,8 +599,8 @@ export function createRenderer(canvas, world, land, images) {
     ctx.save(); ctx.translate(snapX(x), 0); if (f.dir < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, cell * fw, f.row * fh, fw, fh, -w / 2, snapY(y - h + cam.z * .5), w, h); ctx.restore();
     f.sx = x; f.sy = y - h / 2; f.sh = h;
     // A villager with a favour to ask carries a little speech bubble.
-    const ask = s.favours?.find(q => q.land === f.land && !q.done);
-    if (ask && f.n === 0 && ZONES[ask.zone] && f.zone === folk.filter(q => q.land === f.land && q.n === 0).map(q => q.zone).sort((a, b) => a - b)[0]) {
+    const ask = f.kind === 'farm' && s.favours?.find(q => q.land === f.land && !q.done);
+    if (ask) {
       const by = y - h - 7 * cam.z + Math.sin(tNow * 3) * cam.z, r = Math.max(7, 3.2 * cam.z);
       ctx.fillStyle = '#fff6df'; ctx.strokeStyle = '#3a2e23'; ctx.lineWidth = Math.max(1.5, cam.z * .5);
       ctx.beginPath(); ctx.roundRect(x - r, by - r, r * 2, r * 1.8, r * .5); ctx.fill(); ctx.stroke();
@@ -630,10 +627,11 @@ export function createRenderer(canvas, world, land, images) {
     const frostLight = winterGlow(cur, f, next) * .12 + (wxAmt > .01 && snow ? wxAmt * .14 : 0);
     if (frostLight > 0) { ctx.fillStyle = `rgba(240,246,255,${frostLight})`; ctx.fillRect(0, 0, W, H); }
     if (reduced || quality < 1) return;
-    if (wxAmt > .01) {
+    const flurry = frost && cam.z > .9 ? .3 : 0; // Frostmere: always a light snow
+    if (wxAmt > .01 || flurry) {
       if (snow) { // flakes drifting down and sideways
         ctx.fillStyle = '#ffffff';
-        for (let n = 0; n < 240 * wxAmt; n++) { const sp = 26 + hash(n, 3, 91) * 40, x = ((hash(n, 1, 91) * W + Math.sin(t * .8 + n) * 18 + t * 12) % W + W) % W, y = (hash(n, 2, 91) * H + t * sp) % H, r = 2 + Math.floor(hash(n, 4, 91) * 3); ctx.globalAlpha = .7 + hash(n, 5, 91) * .3; ctx.fillRect(x | 0, y | 0, r, r); }
+        for (let n = 0; n < 240 * Math.max(wxAmt, flurry); n++) { const sp = 26 + hash(n, 3, 91) * 40, x = ((hash(n, 1, 91) * W + Math.sin(t * .8 + n) * 18 + t * 12) % W + W) % W, y = (hash(n, 2, 91) * H + t * sp) % H, r = 2 + Math.floor(hash(n, 4, 91) * 3); ctx.globalAlpha = .7 + hash(n, 5, 91) * .3; ctx.fillRect(x | 0, y | 0, r, r); }
       } else { // slanted streaks of rain
         ctx.strokeStyle = 'rgba(214,232,252,.75)'; ctx.lineWidth = 2; ctx.beginPath();
         for (let n = 0; n < 260 * wxAmt; n++) { const sp = 480 + hash(n, 3, 92) * 260, x = ((hash(n, 1, 92) * W - t * 80) % W + W) % W, y = (hash(n, 2, 92) * H + t * sp) % H; ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 16); }
@@ -660,7 +658,7 @@ export function createRenderer(canvas, world, land, images) {
     const z = cam.z, deep = (x, y) => { x |= 0; y |= 0; return x >= 0 && y >= 0 && x < TW && y < TH && world.waterT[y * TW + x] >= 170 && world.waterT[y * TW + x] < 255; };
     if (!s.paused && t > fishAt) {
       fishAt = t + 4 + Math.random() * 8;
-      const [x0, y0, x1, y1] = api.viewBox(), full = world.ponds.map((P, id) => id).filter(id => { const P = world.ponds[id]; return s.zones[id]?.water >= 1 && P.x + P.r > x0 && P.x - P.r < x1 && P.y + P.r > y0 && P.y - P.r < y1; });
+      const [x0, y0, x1, y1] = api.viewBox(), full = world.ponds.map((P, id) => id).filter(id => { const P = world.ponds[id]; return P.r > 0 && s.zones[id]?.water >= 1 && P.x + P.r > x0 && P.x - P.r < x1 && P.y + P.r > y0 && P.y - P.r < y1; });
       if (full.length && fish.length < 3) {
         const P = world.ponds[full[Math.floor(Math.random() * full.length)]];
         for (let k = 0; k < 30; k++) {
@@ -692,7 +690,7 @@ export function createRenderer(canvas, world, land, images) {
       ctx.drawImage(sheet, cell * fw, 0, fw, fh, -w / 2, -h / 2, w, h); ctx.restore();
     }
   }
-  const keyOf = c => c.kind === 'butterfly' ? 'butterfly' + c.variant % 3 : c.kind === 'bird' ? 'bird' + c.variant % 2 : c.kind !== 'rabbit' && LANDS[ZONES[c.zone].land].native ? 'native' + ZONES[c.zone].land : c.kind;
+  const keyOf = c => c.kind === 'butterfly' ? 'butterfly' + c.variant % 3 : c.kind === 'bird' ? 'bird' + c.variant % 2 : c.kind !== 'rabbit' && LANDS[ZONES[c.zone].land].native ? 'native' + lookOf(ZONES[c.zone].land) : c.kind;
   // The animals in view, for the sound: where each is across the screen and how far from the middle.
   function hearing() {
     const out = [], near = closeness();
@@ -889,8 +887,8 @@ export function createRenderer(canvas, world, land, images) {
   let signs = [];
   function drawLabels(s) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; signs = [];
-    if (cam.z < .9) LANDS.forEach((L, l) => {
-      const zs = ZONES.filter(z => z.land === l), x = sx(zs.reduce((a, z) => a + z.px, 0) / 9), y = sy(zs.reduce((a, z) => a + z.py, 0) / 9) - 40;
+    if (cam.z < .9) REGIONS.forEach(R => {
+      const L = R, zs = ZONES.filter(z => R.lands.includes(z.land)), x = sx(zs.reduce((a, z) => a + z.px, 0) / zs.length), y = sy(zs.reduce((a, z) => a + z.py, 0) / zs.length) - 40;
       ctx.globalAlpha = Math.min(1, (.9 - cam.z) * 5); ctx.font = '600 ' + Math.round(clamp(cam.z * 60, W < 600 ? 12 : 18, 34)) + 'px "Pixelify Sans",Georgia,serif';
       ctx.fillStyle = '#231a12'; ctx.fillText(L.name, x + 2, y + 2); ctx.fillStyle = '#fff6df'; ctx.fillText(L.name, x, y); ctx.globalAlpha = 1;
     });
