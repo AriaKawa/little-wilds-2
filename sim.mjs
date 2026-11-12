@@ -1,7 +1,7 @@
 // Rules of restoration. No DOM: runs in the game, offline catch-up and the pacing test alike.
 // One field covers the whole continent; glades are bought outward from the middle, and one army of spirits works all of it.
-import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=32';
-import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=32';
+import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=33';
+import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=33';
 // The ground map spirits and animals walk by, rebuilt when a different set of planted trees is in play.
 export function navOf(s, w) { if (!w.nav || w.navTrees !== s.trees) { buildNav(w); for (const t of s.trees) markTree(w, t); w.navTrees = s.trees; } return w.nav; }
 
@@ -32,8 +32,8 @@ export const landTouched = (s, l) => s.levels[l] !== undefined;
 export const upgradeMax = (s, u) => u.max + (u.more || 0) * mapsDone(s);
 // Restored lands keep earning on their own.
 export const landIncome = (s, l) => landDone(s, l) ? 40 * Math.pow(1.6, s.levels[l] || 0) : 0;
-// The farm and the fishing dock earn seeds of their own once restored.
-export const PLACE_INCOME = { farm: 12, dock: 8 };
+// The farm and the fishing pier earn seeds of their own once restored.
+export const PLACE_INCOME = { farm: 12, pier: 8 };
 let places = [];
 const placeIncome = s => places.reduce((a, [id, kind]) => a + (s.objHp?.[id] === 0 ? PLACE_INCOME[kind] : 0), 0);
 export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s);

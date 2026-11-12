@@ -230,14 +230,16 @@ export function makeLand(seed = 1, mapId = 0) {
 // How each region looks: its ground, grass, water and flowers.
 const LOOK = {
   hollow: { dead: [132, 121, 106], crack: [86, 76, 66], soil: [78, 58, 44], grass: [88, 138, 68], lush: [116, 160, 76], water: [66, 150, 182], flowers: ['#fff4f0', '#ffd34d', '#ff8fb1', '#b890ff', '#ff9d5c'], mist: [214, 208, 192], road: [150, 118, 84] },
-  ember: { dead: [92, 86, 88], crack: [48, 42, 46], soil: [70, 48, 44], grass: [66, 138, 106], lush: [214, 160, 66], water: [56, 170, 170], flowers: ['#ffe9b0', '#ff7a4d', '#ffc247', '#ff5f7e', '#fff4e0'], mist: [190, 180, 178] },
+  // Each region's grass takes its own colour, the same as its restored ground: dry gold drylands in Ember Basin,
+  // pink in Coral Reach, violet in Sporewood, icy blue in Glimmerdeep.
+  ember: { dead: [92, 86, 88], crack: [48, 42, 46], soil: [70, 48, 44], grass: [184, 136, 62], lush: [214, 160, 66], water: [56, 170, 170], flowers: ['#ffe9b0', '#ff7a4d', '#ffc247', '#ff5f7e', '#fff4e0'], mist: [190, 180, 178] },
   // Frostmere lies under snow: pale frosted grass, white drifts and cold blue water.
   frost: { dead: [176, 182, 194], crack: [122, 130, 146], soil: [108, 104, 118], grass: [184, 206, 216], lush: [228, 238, 246], water: [96, 170, 222], flowers: ['#ffffff', '#d8ecff', '#b8e0ff', '#e8d8ff', '#ffffff'], mist: [232, 238, 246], peak: [246, 250, 255] },
   sun: { dead: [168, 150, 118], crack: [112, 94, 70], soil: [112, 82, 54], grass: [122, 172, 76], lush: [170, 196, 84], water: [52, 176, 190], flowers: ['#fff6d8', '#ff6f6f', '#ffb347', '#ff8fc8', '#7fd8d0'], mist: [232, 222, 196], sand: [240, 216, 160], road: [188, 156, 108] },
   mist: { dead: [104, 104, 92], crack: [62, 64, 56], soil: [52, 48, 40], grass: [72, 130, 96], lush: [96, 156, 118], water: [78, 142, 150], flowers: ['#e8fff0', '#b8f0d0', '#d8b8ff', '#fff2a8', '#88d8c8'], mist: [196, 210, 200] },
-  coral: { dead: [150, 134, 136], crack: [98, 84, 92], soil: [98, 66, 80], grass: [82, 170, 150], lush: [236, 140, 160], water: [64, 196, 206], flowers: ['#fff0f4', '#ff7fa8', '#ffb09a', '#a0f0e0', '#ffe28a'], mist: [234, 212, 220], sand: [250, 214, 200] },
-  spore: { dead: [106, 92, 104], crack: [64, 52, 66], soil: [60, 44, 58], grass: [84, 128, 92], lush: [132, 110, 180], water: [92, 130, 190], flowers: ['#f0e0ff', '#c890ff', '#ff90c8', '#90f0d0', '#ffd890'], mist: [204, 192, 214] },
-  glimmer: { dead: [116, 116, 134], crack: [68, 68, 90], soil: [62, 56, 86], grass: [78, 158, 160], lush: [120, 190, 220], water: [110, 150, 240], flowers: ['#ffffff', '#b8e8ff', '#d0b0ff', '#90f0e0', '#ffc0f0'], mist: [212, 214, 236], peak: [214, 196, 255] },
+  coral: { dead: [150, 134, 136], crack: [98, 84, 92], soil: [98, 66, 80], grass: [206, 122, 146], lush: [236, 140, 160], water: [64, 196, 206], flowers: ['#fff0f4', '#ff7fa8', '#ffb09a', '#a0f0e0', '#ffe28a'], mist: [234, 212, 220], sand: [250, 214, 200] },
+  spore: { dead: [106, 92, 104], crack: [64, 52, 66], soil: [60, 44, 58], grass: [116, 98, 166], lush: [132, 110, 180], water: [92, 130, 190], flowers: ['#f0e0ff', '#c890ff', '#ff90c8', '#90f0d0', '#ffd890'], mist: [204, 192, 214] },
+  glimmer: { dead: [116, 116, 134], crack: [68, 68, 90], soil: [62, 56, 86], grass: [96, 158, 200], lush: [120, 190, 220], water: [110, 150, 240], flowers: ['#ffffff', '#b8e8ff', '#d0b0ff', '#90f0e0', '#ffc0f0'], mist: [212, 214, 236], peak: [214, 196, 255] },
 };
 // The map is a grid of land-sized cells, three across and four down. A region can cover more than one cell:
 // Frostmere spans the north, Mistfen the west and Ember Basin the east. The bottom row is sea, with one island
@@ -264,8 +266,8 @@ export const REGIONS = [...new Set(LANDS.map(L => L.name))].map(name => ({ name,
 // The continent's water and its one path, planned for the whole map at once: little rivers run down from springs
 // in Frostmere, Glimmerdeep, Mistfen and Ember Basin into the great lake in Hollow Vale, and one river runs out of
 // the lake south through Sunfall Coast to the sea. Three small ponds lie where no river reaches. A narrow path runs
-// from the farm in Sunfall Coast over the one bridge to the fishing dock on the lake. Points are [x, y, width].
-export const WATER = { rivers: [], ponds: [], path: [], farm: null, dock: null };
+// from the farm in Sunfall Coast down to the fishing pier on the coast. Points are [x, y, width].
+export const WATER = { rivers: [], ponds: [], path: [], farm: null, pier: null };
 const onLand = (gx, gy) => { const col = Math.floor(gx / LW), row = Math.floor(gy / LH); if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return false; return !terrain(col, row, gx - col * LW, gy - row * LH); };
 function inland(x, y, m) { // the nearest point to (x, y) with land all round it for m texels
   for (let r = 0; r < 700; r += 10) for (let a = 0; a < 6.283; a += r ? 10 / r : 7) {
@@ -296,12 +298,18 @@ function planWater() {
   WATER.rivers.push(out);
   WATER.ponds = [[LW * .5, LH * 2.3, 10], [LW * 2.5, LH * 2.25, 11], [LW * 1.62, LH * 3 + 290, 10]].map(([x, y, r]) => ({ ...inland(x, y, 50), r }));
   // The fishing dock on the lake's eastern shore; the farm west of the river in Sunfall Coast.
-  // The dock stands on the lake's south-eastern shore, between the stream from Ember Basin and the river out.
-  const da = .78, dir = [Math.cos(da), Math.sin(da)];
-  WATER.dock = { x: lake.x + dir[0] * rx * .9, y: lake.y + dir[1] * ry * .9 };
   WATER.farm = inland(LW * 1.3, LH * 2.22, 70);
-  const bend = { x: lake.x + 150, y: lake.y + 220 }, end = { x: WATER.dock.x + dir[0] * 6, y: WATER.dock.y + 4 };
-  WATER.path = [...course({ x: WATER.farm.x + 4, y: WATER.farm.y + 6 }, bend, 2.3, 2.3, 11, 50), ...course(bend, end, 2.3, 2.3, 12, 40)];
+  // The fishing pier: on the coast nearest the farm (well clear of the river mouth), it starts on dry land and
+  // runs straight out to sea, square to the shore. Its direction is the way from the land around it to the sea.
+  const F = WATER.farm, sea = (x, y) => { const col = Math.floor(x / LW), row = Math.floor(y / LH); return col >= 0 && row >= 0 && col < COLS && row < ROWS && terrain(col, row, x - col * LW, y - row * LH) === SEA; };
+  let S = null, sd = Infinity;
+  for (let y = F.y; y < LH * 3; y += 4) for (let x = F.x - 320; x <= F.x + 320; x += 4) { const d = Math.hypot(x - F.x, y - F.y); if (d < sd && Math.abs(x - lake.x) > 110 && sea(x, y)) { sd = d; S = { x, y }; } }
+  let ax = 0, ay = 0; for (let a = 0; a < 6.283; a += .2) for (const r of [18, 34]) { const x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r, k = sea(x, y) ? 1 : -1; ax += Math.cos(a) * k; ay += Math.sin(a) * k; }
+  const al = Math.hypot(ax, ay) || 1, dx = ax / al, dy = ay / al;
+  let back = 0; while (back < 200 && !onLand(S.x - dx * back, S.y - dy * back)) back += 2; // the first dry ground behind the shore
+  const land = { x: S.x - dx * (back + 10), y: S.y - dy * (back + 10) };
+  WATER.pier = { x0: land.x, y0: land.y, x1: S.x + dx * 40, y1: S.y + dy * 40, dx, dy, w: 3.5 };
+  WATER.path = course({ x: F.x + 4, y: F.y + 6 }, { x: land.x - dx * 4, y: land.y - dy * 4 }, 2.3, 2.3, 11, 40);
 }
 
 export const landAt = i => LANDS[i % LANDS.length];
@@ -389,10 +397,11 @@ export async function makeWorld(progress = async () => {}) {
   }
   // A last look over the whole continent: nothing stands in water, on a road or crop row, on rock or sand, or on
   // top of something else. A misplaced tree or stone shuffles a little way over, or is left out.
-  // The farm and the fishing dock are places that earn seeds once restored (art: assets/places.png, ChatGPT).
-  { const F = WATER.farm, D = WATER.dock, keep = objects.filter(o => Math.hypot(o.x * CELL - F.x, o.y * CELL - F.y) > 70 && Math.hypot(o.x * CELL - D.x, o.y * CELL - D.y) > 44);
+  // The farm and the fishing pier are places that earn seeds once restored. The farm is ChatGPT art (assets/places.png);
+  // the pier is drawn plank by plank along its line, so it always starts on land and points out to sea.
+  { const F = WATER.farm, D = { x: WATER.pier.x0, y: WATER.pier.y0 }, keep = objects.filter(o => Math.hypot(o.x * CELL - F.x, o.y * CELL - F.y) > 70 && Math.hypot(o.x * CELL - D.x, o.y * CELL - D.y) > 36);
     objects.length = 0; objects.push(...keep);
-    for (const [P, place, dead, size] of [[F, 'farm', 0, 66], [D, 'dock', 2, 46]]) objects.push({ id: objects.length, zone: 0, dead, live: dead + 1, x: P.x / CELL, y: P.y / CELL, size, hp: 3, place, land: landAtTexel(P.x, P.y) }); }
+    for (const [P, place, dead, size] of [[F, 'farm', 0, 66], [D, 'pier', 2, 40]]) objects.push({ id: objects.length, zone: 0, dead, live: dead + 1, x: P.x / CELL, y: P.y / CELL, size, hp: 3, place, land: landAtTexel(P.x, P.y) }); }
   for (const o of objects) { o.worth = o.size; o.size *= SHRINK; }
   const solid = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= TW || y >= TH) return true; const i = y * TW + x; return edge[i] || road[i] || waterT[i] < 255; };
   const scanClear = (x, y, half, deep, step) => { for (let yy = y - deep; yy <= y + 4; yy += step) for (let xx = x - half; xx <= x + half; xx += step) if (solid(xx, yy)) return false; return true; };
@@ -403,7 +412,7 @@ export async function makeWorld(progress = async () => {}) {
   const crowded = (x, y, size, skip) => { for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) for (const q of buckets.get(bucketAt(x + a * BUCKET, y + b * BUCKET)) || []) { if (q === skip) continue; const qx = q.x * CELL, qy = q.y * CELL; if (Math.abs(qx - x) < (q.size + size) * .3 && Math.abs(qy - y) < Math.max(8, (q.size + size) * .16)) return true; } return false; };
   const keep = o => { const k = bucketAt(o.x * CELL, o.y * CELL); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(o); };
   const kept = [];
-  for (const o of objects) if (o.place) { kept.push(o); keep(o); } // The farm and the dock stand where they were planned.
+  for (const o of objects) if (o.place) { kept.push(o); keep(o); } // The farm and the pier stand where they were planned.
   for (const o of objects) {
     if (o.place) continue;
     const [half, deep] = base(o.size), x0 = o.x * CELL, y0 = o.y * CELL, reach = Math.max(36, o.size);

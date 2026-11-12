@@ -1,7 +1,7 @@
 // The ground as one pixel canvas for the whole continent. Every texel keeps a small code for its grain,
 // shade and kind of ground; each land turns codes into colours through lookup tables, one per growth stage,
 // so the front line between dead and alive stays crisp and organic without a colour array per stage.
-import { TW, TH, LW, LH, CW, CH, CELL, COLS as GRID_COLS, fbm, noise, hash, LANDS, SEA, BEACH, ROCK, landAtTexel, lookOf, EMPTY_CELLS, hillShade } from './world.mjs?v=32';
+import { TW, TH, LW, LH, CW, CH, CELL, COLS as GRID_COLS, fbm, noise, hash, LANDS, SEA, BEACH, ROCK, landAtTexel, lookOf, EMPTY_CELLS, hillShade } from './world.mjs?v=33';
 
 const packed = (r, g, b) => (255 << 24) | (Math.max(0, Math.min(255, b)) << 16) | (Math.max(0, Math.min(255, g)) << 8) | Math.max(0, Math.min(255, r));
 const pack = c => packed(c[0], c[1], c[2]);

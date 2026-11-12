@@ -1,9 +1,9 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=32';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=32';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=32';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=32';
-import { steer, standable, overWater, escape } from './nav.mjs?v=32';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=33';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=33';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=33';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=33';
+import { steer, standable, overWater, escape } from './nav.mjs?v=33';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -333,10 +333,10 @@ export function createRenderer(canvas, world, land, images) {
       // Fine-bladed chunks are large, so only the most recent are kept.
       if (baked.size > CAP[r]) for (const key of baked.keys()) { baked.delete(key); if (baked.size <= CAP[r] * .75) break; }
       const mk = () => { const c = document.createElement('canvas'); c.width = (FC + 18) * r; c.height = (FC + 14) * r; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; return { c, g }; };
-      const m = mk(); b = { c: m.c, g: m.g, r, l: lyke ? mk() : null, l2: lyke ? mk() : null }; baked.set(index, b);
+      const m = mk(); b = { c: m.c, g: m.g, r, v: mk(), l: lyke ? mk() : null, l2: lyke ? mk() : null }; baked.set(index, b);
     }
     const cx = index % FCOLS * FC, cy = Math.floor(index / FCOLS) * FC, f = shown || s.h;
-    b.g.clearRect(0, 0, b.c.width, b.c.height); b.empty = true; b.lEmpty = true;
+    b.g.clearRect(0, 0, b.c.width, b.c.height); b.v.g.clearRect(0, 0, b.c.width, b.c.height); b.empty = true; b.lEmpty = true; b.vEmpty = true;
     if (b.l) { b.l.g.clearRect(0, 0, b.c.width, b.c.height); b.l2.g.clearRect(0, 0, b.c.width, b.c.height); }
     if (grass === 'none') return;
     if (lyke) {
@@ -351,10 +351,13 @@ export function createRenderer(canvas, world, land, images) {
     }
     for (let k = F.start[index], end = k + F.count[index]; k < end; k++) {
       const h = f[F.cell[k]];
-      if (h < F.thr[k] || F.phase[k] < LIVE[grass] || lyke && isStrandKind(k)) continue;
-      b.empty = false;
+      if (h < F.thr[k] || lyke && isStrandKind(k)) continue;
+      // The plants that sway in the wind close up are baked too, on their own layer, standing still: they fill the
+      // meadow until the camera is close enough for them to be drawn one by one, so nothing pops in.
+      const live = F.phase[k] < LIVE[grass], g = live ? b.v.g : b.g;
+      if (live) b.vEmpty = false; else b.empty = false;
       const grow = Math.min(1, (h - F.thr[k]) / .07 + .25), dh = Math.round(ch * r * grow);
-      b.g.drawImage(plants(F.x[k], F.y[k]), col(k, 1) * cw * sr, F.kind[k] * ch * sr, cw * sr, ch * sr, Math.round((F.x[k] - cx + 9 - cw / 2) * r), Math.round((F.y[k] - cy + 14) * r - dh), cw * r, dh);
+      g.drawImage(plants(F.x[k], F.y[k]), col(k, 1) * cw * sr, F.kind[k] * ch * sr, cw * sr, ch * sr, Math.round((F.x[k] - cx + 9 - cw / 2) * r), Math.round((F.y[k] - cy + 14) * r - dh), cw * r, dh);
     }
   }
   // The stretches of a gust band, inside the box at (x, y) w by h texels, where the wind is strong enough to
@@ -371,21 +374,31 @@ export function createRenderer(canvas, world, land, images) {
     return quads.length ? () => { for (const q of quads) { ctx.moveTo(sx(q[0][0]), sy(q[0][1])); for (let m = 1; m < 4; m++) ctx.lineTo(sx(q[m][0]), sy(q[m][1])); ctx.closePath(); } } : null;
   }
   // Most plants are baked into per-chunk images, so a full meadow costs a few draws rather than thousands.
-  // A smaller share stays live to carry the wind. From far away the meadow is left to the ground colours.
+  // A smaller share stays live to carry the wind. From far away the meadow is left to the ground colours, and it
+  // fades in as the camera comes down rather than appearing all at once.
+  const chunksIn = (z, pad = 0) => { const out = [], x0 = cam.x - W / 2 / z - 12 - pad, x1 = cam.x + W / 2 / z + 12 + pad, y0 = cam.y - H / 2 / z - pad, y1 = cam.y + H / 2 / z + 14 + pad;
+    for (let cy = Math.max(0, Math.floor(y0 / FC)); cy <= Math.min(FROWS - 1, Math.floor(y1 / FC)); cy++) for (let cx = Math.max(0, Math.floor(x0 / FC)); cx <= Math.min(FCOLS - 1, Math.floor(x1 / FC)); cx++) out.push(cy * FCOLS + cx);
+    return out; };
   function drawFlora(s, time, dt) {
     const z = cam.z;
-    if (z < .75 || grass === 'none') return;
-    const t = reduced || s.paused ? 0 : time / 1000, f = shown || s.h;
-    const x0 = cam.x - W / 2 / z - 12, x1 = cam.x + W / 2 / z + 12, y0 = cam.y - H / 2 / z, y1 = cam.y + H / 2 / z + 14;
-    const visible = [];
-    for (let cy = Math.max(0, Math.floor(y0 / FC)); cy <= Math.min(FROWS - 1, Math.floor(y1 / FC)); cy++) for (let cx = Math.max(0, Math.floor(x0 / FC)); cx <= Math.min(FCOLS - 1, Math.floor(x1 / FC)); cx++) visible.push(cy * FCOLS + cx);
-    const end = performance.now() + 3;
-    const want = bakeRes(), lyke = !!flora[0].strands;
-    for (const i of visible) if ((floraDirty[i] || !baked.has(i) || baked.get(i).r !== want) && performance.now() < end) { floraDirty[i] = 0; bakeChunk(i, s); }
+    if (grass === 'none') return;
+    const t = reduced || s.paused ? 0 : time / 1000, f = shown || s.h, fade = clamp((z - .6) / .25, 0, 1);
+    // Bake what is on screen, nearest the middle first, and when zoomed out the middle of the view as it will be
+    // once zoomed in, so the meadow is ready before the camera gets there.
+    const want = bakeRes(), lyke = !!flora[0].strands, end = performance.now() + 4;
+    const todo = chunksIn(Math.max(z, .85)).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
+    if (todo.length) {
+      const mx = cam.x / FC, my = cam.y / FC; todo.sort((a, b) => Math.hypot(a % FCOLS + .5 - mx, Math.floor(a / FCOLS) + .5 - my) - Math.hypot(b % FCOLS + .5 - mx, Math.floor(b / FCOLS) + .5 - my));
+      for (const i of todo) { if (performance.now() > end) break; floraDirty[i] = 0; bakeChunk(i, s); }
+    }
+    if (!fade) return;
+    const visible = chunksIn(z), closeUp = z >= 1.7 && quality >= 1;
+    ctx.globalAlpha = fade;
     for (const i of visible) {
       const b = baked.get(i); if (!b) continue;
       const X = sx(i % FCOLS * FC - 9), Y = sy(Math.floor(i / FCOLS) * FC - 14), w = b.c.width * z / b.r, hh = b.c.height * z / b.r;
       if (!b.empty) ctx.drawImage(b.c, X, Y, w, hh);
+      if (!closeUp && b.v && !b.vEmpty) ctx.drawImage(b.v.c, X, Y, w, hh);
       if (b.l && !b.lEmpty) {
         const bands = t && quality >= 1 ? gustBands(i % FCOLS * FC - 9, Math.floor(i / FCOLS) * FC - 14, b.c.width / b.r, b.c.height / b.r, t) : null;
         if (!bands) { ctx.drawImage(b.l.c, X, Y, w, hh); continue; }
@@ -393,7 +406,8 @@ export function createRenderer(canvas, world, land, images) {
         ctx.save(); ctx.beginPath(); bands(); ctx.clip(); ctx.drawImage(b.l2.c, X, Y, w, hh); ctx.restore();
       }
     }
-    if (z < 1.7 || quality < 1) return;
+    ctx.globalAlpha = 1;
+    if (!closeUp) return;
     for (const i of visible) {
       const { cw, ch, r } = flora[0];
       for (let k = F.start[i], stop = k + F.count[i]; k < stop; k++) {
@@ -441,7 +455,7 @@ export function createRenderer(canvas, world, land, images) {
   function drawProps(s, time, dt, carry) {
     s_ = s;
     const items = [], z = cam.z, lx = cam.x - W / 2 / z - 70, hx = cam.x + W / 2 / z + 70, ly = cam.y - H / 2 / z - 10, hy = cam.y + H / 2 / z + 120;
-    for (const o of world.objects) { const x = o.x * CELL, y = o.y * CELL; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, o }); }
+    for (const o of world.objects) { if (o.place === 'pier') continue; const x = o.x * CELL, y = o.y * CELL; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, o }); }
     for (const a of s.spirits) if (a !== carry) items.push({ y: (a.ry ?? a.y) * CELL, a });
     const night = clamp((Math.cos((s.age / 480) % 1 * 6.283) * -1 - .35) / .65, 0, 1) > .4;
     for (const c of critters) if (PETS[c.kind]) { if (!s.paused) stepPet(s, c, dt, night); const x = c.x, y = c.y; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, c }); }
@@ -557,7 +571,7 @@ export function createRenderer(canvas, world, land, images) {
     }
   }
   // Folk: once the farm in Sunfall Coast is restored a farmer works it, ambling up and down the path by it; once the
-  // dock on the great lake is mended a fisherman stands at its end with his rod.
+  // pier on the coast is mended a fisherman stands at its far end with his rod, looking out to sea.
   // assets/folk.png (ChatGPT art): rows are a farmer, a fisher and a snow villager; four stepping frames, then a wave.
   const folk = []; let folkAt = 0;
   const isRoad = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= TW || y >= TH) return false; const r = world.road[y * TW + x]; return r === 1 || r === 2 || r === 4; };
@@ -567,8 +581,8 @@ export function createRenderer(canvas, world, land, images) {
       if (!o.place) continue;
       const here = s.objHp?.[o.id] === 0 && Math.hypot(o.x * CELL - cam.x, o.y * CELL - cam.y) < 1100, f = folk.find(q => q.place === o.id);
       if (here && !f) {
-        const fisher = o.place === 'dock', x = o.x * CELL + (fisher ? o.size * .13 : 12), y = o.y * CELL + (fisher ? -o.size * .42 : 6);
-        folk.push({ place: o.id, kind: o.place, land: o.land, zone: o.zone, x, y, home: { x, y }, sortY: fisher ? o.y * CELL + 1 : null, hx: 1, hy: 0, dir: fisher ? -1 : 1, dist: 0, pause: 2, wave: 0, alpha: 0, row: fisher ? 1 : 0, stay: fisher });
+        const fisher = o.place === 'pier', P = WATER.pier, x = fisher ? P.x1 - P.dx * 5 : o.x * CELL + 12, y = fisher ? P.y1 - P.dy * 5 : o.y * CELL + 6;
+        folk.push({ place: o.id, kind: o.place, land: o.land, zone: o.zone, x, y, home: { x, y }, sortY: null, hx: 1, hy: 0, dir: fisher ? (P.dx >= 0 ? 1 : -1) : 1, dist: 0, pause: 2, wave: 0, alpha: 0, row: fisher ? 1 : 0, stay: fisher });
       }
       if (!here && f) folk.splice(folk.indexOf(f), 1);
     }
@@ -577,7 +591,7 @@ export function createRenderer(canvas, world, land, images) {
   function stepFolk(f, dt) {
     f.alpha = Math.min(1, f.alpha + dt * .6);
     if (f.wave > 0) { f.wave -= dt; return; }
-    if (f.stay) return; // the fisherman keeps to his dock
+    if (f.stay) return; // the fisherman keeps to his pier
     if (f.pause > 0) { f.pause -= dt; return; }
     if (Math.random() < dt * .08) { f.pause = 2 + Math.random() * 4; return; }
     const ahead = (hx, hy) => isRoad(f.x + hx * 3, f.y + hy * 3) && isRoad(f.x + hx * 6, f.y + hy * 6);
@@ -608,6 +622,24 @@ export function createRenderer(canvas, world, land, images) {
       f.asks = true;
     } else f.asks = false;
     ctx.globalAlpha = 1;
+  }
+  // The fishing pier, plank by plank along its line from the land out to sea: boards laid across the walkway with a
+  // seam every third texel, a darker rail of pilings down each side every seven. Weathered grey with boards missing
+  // until it is restored, then warm, whole wood.
+  const pierObj = world.objects.find(o => o.place === 'pier');
+  function drawPier(s) {
+    const P = WATER.pier; if (!P || !pierObj) return;
+    const z = cam.z, len = Math.hypot(P.x1 - P.x0, P.y1 - P.y0), nx = -P.dy, ny = P.dx, whole = s.objHp?.[pierObj.id] === 0;
+    if (Math.max(P.x0, P.x1) + 10 < cam.x - W / 2 / z || Math.min(P.x0, P.x1) - 10 > cam.x + W / 2 / z || Math.max(P.y0, P.y1) + 10 < cam.y - H / 2 / z || Math.min(P.y0, P.y1) - 10 > cam.y + H / 2 / z) return;
+    const wood = whole ? ['#b98552', '#a8743f', '#7a5230'] : ['#9a9284', '#8a8274', '#5e574c'], half = P.w;
+    const dot = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(Math.floor(sx(Math.round(x))), Math.floor(sy(Math.round(y))), Math.ceil(z), Math.ceil(z)); };
+    for (let d = 0; d <= len; d += .5) {
+      const k = Math.floor(d / 3), x = P.x0 + P.dx * d, y = P.y0 + P.dy * d;
+      if (!whole && d > 6 && hash(k, 3, 71) < .28) continue; // a missing board
+      const seam = d % 3 < .5, col = seam ? wood[2] : wood[k % 2];
+      for (let e = -half; e <= half; e += .5) dot(x + nx * e, y + ny * e, Math.abs(e) > half - .6 ? wood[2] : col);
+      if (d > 8 && Math.floor(d) % 7 === 0) for (const side of [-1, 1]) { dot(x + nx * (half + 1) * side, y + ny * (half + 1) * side, wood[2]); dot(x + nx * (half + 1) * side, y + ny * (half + 1) * side + 1, wood[2]); }
+    }
   }
   // Weather and the seasons, laid over the land: a tint for the time of year, a shower or snowfall now and then,
   // blossom in spring and drifting leaves in autumn.
@@ -967,7 +999,7 @@ export function createRenderer(canvas, world, land, images) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false; newFrame();
       updateFog(s); spawnCritters(s, time); spawnFolk(s, time);
       ctx.fillStyle = '#365568'; ctx.fillRect(0, 0, W, H);
-      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawFlora(s, time, dt); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawLight(s, time); drawWeather(s, time, dt);
+      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawPier(s); drawFlora(s, time, dt); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawLight(s, time); drawWeather(s, time, dt);
       drawParticles(dt);
       if (fogAlpha.some(a => a > 0)) { ctx.imageSmoothingEnabled = true; const drift = reduced || quality < 1 ? 0 : Math.sin(time * .00016) * 7 * cam.z; ctx.globalAlpha = .72; ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0), sy(0), TW * cam.z, TH * cam.z); ctx.globalAlpha = quality > 1 ? .5 : .35; if (quality > 1) ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0) + drift, sy(0) - drift * .5, TW * cam.z, TH * cam.z); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false; }
       if (!opts.title) drawLabels(s);
