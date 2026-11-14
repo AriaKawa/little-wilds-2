@@ -1,9 +1,9 @@
-import { makeWorld, ZONES, LANDS, REGIONS, CN, CW, CH, CELL, hash } from './world.mjs?v=33';
-import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=33';
-import { createLand } from './land.mjs?v=33';
-import { createRenderer, GRASS_STYLES } from './render.mjs?v=33';
-import { createAudio } from './audio.mjs?v=33';
-import { spiritFace, useDeerSheet } from './critters.mjs?v=33';
+import { makeWorld, ZONES, LANDS, REGIONS, CN, CW, CH, CELL, hash } from './world.mjs?v=34';
+import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=34';
+import { createLand } from './land.mjs?v=34';
+import { createRenderer, GRASS_STYLES } from './render.mjs?v=34';
+import { createAudio } from './audio.mjs?v=34';
+import { spiritFace, useDeerSheet } from './critters.mjs?v=34';
 
 const KEY = 'little-wilds-2-v2', CARDS_KEY = 'little-wilds-2-postcards', SOUND_KEY = 'little-wilds-2-muted', VOLUME_KEY = 'little-wilds-2-volume', GRASS_KEY = 'little-wilds-2-grass', MUSIC_KEY = 'little-wilds-2-music';
 const $ = id => document.getElementById(id);
@@ -425,7 +425,7 @@ addEventListener('pagehide', save);
 async function main() {
   try {
     await nextFrame();
-    const [worldImg, spirits, landmarks, pets, flyers, deer, fish, fawn, folk, raincloud, places, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/landmarks.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=33').catch(() => null), load('assets/fish.png?v=33').catch(() => null), load('assets/fawn.png?v=33').catch(() => null), load('assets/folk.png?v=33').catch(() => null), load('assets/raincloud.png?v=33').catch(() => null), load('assets/places.png?v=33').catch(() => null), ...LANDS.slice(1).map((_, n) => load(`assets/biome-${n + 1}.png?v=33`).catch(() => null))]);
+    const [worldImg, spirits, landmarks, pets, flyers, deer, fish, fawn, folk, raincloud, places, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/landmarks.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=34').catch(() => null), load('assets/fish.png?v=34').catch(() => null), load('assets/fawn.png?v=34').catch(() => null), load('assets/folk.png?v=34').catch(() => null), load('assets/raincloud.png?v=34').catch(() => null), load('assets/places.png?v=34').catch(() => null), ...LANDS.slice(1).map((_, n) => load(`assets/biome-${n + 1}.png?v=34`).catch(() => null))]);
     if (deer) useDeerSheet(deer, fawn);
     images = { world: worldImg, spirits, landmarks, pets, flyers, fish, folk, raincloud, places, biomes: [null, ...biomes] };
     await buildWorld();

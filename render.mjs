@@ -1,9 +1,9 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=33';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=33';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=33';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=33';
-import { steer, standable, overWater, escape } from './nav.mjs?v=33';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=34';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=34';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=34';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=34';
+import { steer, standable, overWater, escape } from './nav.mjs?v=34';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -246,14 +246,14 @@ export function createRenderer(canvas, world, land, images) {
   // Where an object's art comes from: [image, x, y, width, height] in that image.
   function artSrc(o, frame) {
     const b = images.biomes[o.art], cell = (img, n) => [img, n % 4 * 96, (n >> 2) * 96, 96, 96];
-    if (o.place && images.places) return cell(images.places, frame);
+    if (o.place && images.places) return [images.places, frame * 96, 0, 96, 96]; // one row: farm, (old dock), spring
     if (o.mark) return cell(images.landmarks, frame);
     if (b && BIOME[frame] !== undefined) return frame <= KIND_BLOSSOM ? treeBuild(cell(b, BIOME[frame]), Math.imul(o.id + 7, 2654435761) >>> 30) : cell(b, BIOME[frame]);
     return [images.world, frame % 4 * SIZE, Math.floor(frame / 4) * SIZE, SIZE, SIZE];
   }
   function drawArt(o, frame, x, y, w, h = w, base = null, snap = true) {
     const [img, fx, fy, fw, fh] = artSrc(o, frame);
-    tone = o.art; blit(img, fx, fy, fw, fh, x, y, w, h, false, base, snap); tone = -1;
+    tone = o.place ? -1 : o.art; blit(img, fx, fy, fw, fh, x, y, w, h, false, base, snap); tone = -1; // the farm, pier and springs keep their own colours
   }
   // What ties a sprite to the ground: trodden earth under a building, then a shadow cast from its own silhouette.
   // Returns where the sprite sits, so its foot can be given grass afterwards.
@@ -578,7 +578,7 @@ export function createRenderer(canvas, world, land, images) {
   function spawnFolk(s, time) {
     if (time - folkAt < 1000) return; folkAt = time;
     for (const o of world.objects) {
-      if (!o.place) continue;
+      if (o.place !== 'farm' && o.place !== 'pier') continue; // springs have no keeper
       const here = s.objHp?.[o.id] === 0 && Math.hypot(o.x * CELL - cam.x, o.y * CELL - cam.y) < 1100, f = folk.find(q => q.place === o.id);
       if (here && !f) {
         const fisher = o.place === 'pier', P = WATER.pier, x = fisher ? P.x1 - P.dx * 5 : o.x * CELL + 12, y = fisher ? P.y1 - P.dy * 5 : o.y * CELL + 6;

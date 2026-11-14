@@ -1,7 +1,7 @@
 // The ground as one pixel canvas for the whole continent. Every texel keeps a small code for its grain,
 // shade and kind of ground; each land turns codes into colours through lookup tables, one per growth stage,
 // so the front line between dead and alive stays crisp and organic without a colour array per stage.
-import { TW, TH, LW, LH, CW, CH, CELL, COLS as GRID_COLS, fbm, noise, hash, LANDS, SEA, BEACH, ROCK, landAtTexel, lookOf, EMPTY_CELLS, hillShade } from './world.mjs?v=33';
+import { TW, TH, LW, LH, CW, CH, CELL, COLS as GRID_COLS, fbm, noise, hash, LANDS, SEA, BEACH, ROCK, landAtTexel, lookOf, EMPTY_CELLS, hillShade } from './world.mjs?v=34';
 
 const packed = (r, g, b) => (255 << 24) | (Math.max(0, Math.min(255, b)) << 16) | (Math.max(0, Math.min(255, g)) << 8) | Math.max(0, Math.min(255, r));
 const pack = c => packed(c[0], c[1], c[2]);
@@ -142,7 +142,7 @@ export async function createLand(w, progress = async () => {}) {
         if (t < 255 && zonesState[w.waterZ[i]].water * 254 >= t) {
           const shore = w.waterT[i + 1] === 255 || w.waterT[i - 1] === 255 || w.waterT[i + TW] === 255 || w.waterT[i - TW] === 255, fine = c < EDGE ? (c >> 5 & 3) * 3 >> 2 : 1;
           const wk = (shore ? .78 : .92 + fine * .07) * (t >= 178 ? 1 - (1 - t / 254) * .6 : 1);
-          const P = LANDS[w.biome[i]]; target[i] = packed(P.water[0] * wk, P.water[1] * wk, P.water[2] * wk); continue;
+          const P = LANDS[0]; target[i] = packed(P.water[0] * wk, P.water[1] * wk, P.water[2] * wk); continue; // fresh water is one colour everywhere
         }
         const fx = Math.min(CW - 1.001, Math.max(0, x / CELL - .5)), ix = Math.floor(fx), tx = fx - ix, n = iy * CW + ix;
         // Next to an edge there is nothing to blend with, so the ground takes its restored neighbours' value.

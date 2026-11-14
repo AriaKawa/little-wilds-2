@@ -51,7 +51,7 @@ function buildCoast() {
     const gx = a * COAST_STEP, gy = b * COAST_STEP;
     const u = (gx - GW / 2) / (GW / 2) + (fbm(gx / 520, gy / 520, 81) - .5) * .26, v0 = (gy - GH / 2) / (GH / 2), v = v0 * (v0 > 0 ? 1.1 : 1) + (fbm(gx / 520, gy / 520, 83) - .5) * .26;
     const rho = Math.pow(Math.abs(u) ** 2.5 + Math.abs(v) ** 2.5, 1 / 2.5), th = Math.atan2(v, u);
-    coastGrid[i] = (.93 + .05 * Math.sin(3 * th + 2.6) + .05 * Math.sin(5 * th + .4) + .025 * Math.sin(8 * th + 4) - rho) * 1000;
+    coastGrid[i] = (.93 + .05 * Math.sin(3 * th + 2.6) + .05 * Math.sin(5 * th + .4) + .025 * Math.sin(8 * th + 4) - rho + (fbm(gx / 230, gy / 230, 87) - .5) * .13) * 1000;
   }
 }
 export function coastInset(gx, gy) { // Roughly how many texels inland this point is.
@@ -103,8 +103,23 @@ export function makeLand(seed = 1, mapId = 0) {
   const map = LANDS[mapId];
   const edge = new Uint8Array(LW * LH), edgeD = new Float32Array(LW * LH), blocked = new Uint8Array(LCN), near = new Uint8Array(LCN);
   for (let y = 0, i = 0; y < LH; y++) for (let x = 0; x < LW; x++, i++) { const e = terrain(map.col, map.row, x, y); if (e) { edge[i] = e; edgeD[i] = edgeDepth; } }
+  // No stray specks: a scrap of land or sand too small to be an island sinks, and a puddle of sea cut off inside the
+  // land fills in, so the coast is one clean line.
+  { const seen = new Uint8Array(LW * LH), stack = new Int32Array(LW * LH);
+    for (let s0 = 0; s0 < LW * LH; s0++) {
+      if (seen[s0]) continue;
+      const wet = edge[s0] === SEA; let n = 0, sp = 0, border = false; stack[sp++] = s0; seen[s0] = 1; const part = [];
+      while (sp) { const i = stack[--sp]; if (n < 2600) part.push(i); n++; const x = i % LW, y = (i / LW) | 0; if (x === 0 || y === 0 || x === LW - 1 || y === LH - 1) border = true;
+        if (x > 0 && !seen[i - 1] && (edge[i - 1] === SEA) === wet) { seen[i - 1] = 1; stack[sp++] = i - 1; }
+        if (x < LW - 1 && !seen[i + 1] && (edge[i + 1] === SEA) === wet) { seen[i + 1] = 1; stack[sp++] = i + 1; }
+        if (y > 0 && !seen[i - LW] && (edge[i - LW] === SEA) === wet) { seen[i - LW] = 1; stack[sp++] = i - LW; }
+        if (y < LH - 1 && !seen[i + LW] && (edge[i + LW] === SEA) === wet) { seen[i + LW] = 1; stack[sp++] = i + LW; } }
+      if (!wet && n < 2500 && !border) for (const i of part) { edge[i] = SEA; edgeD[i] = .3; }
+      if (wet && n < 900 && !border) for (const i of part) { edge[i] = BEACH; edgeD[i] = 0; }
+    }
+  }
   // A cell is off limits only if it sits well inside the edge, so restored ground always reaches the shore.
-  for (let y = 0, i = 0; y < LCH; y++) for (let x = 0; x < LCW; x++, i++) if (terrain(map.col, map.row, x * CELL + 2, y * CELL + 2, 3)) blocked[i] = 1;
+  for (let y = 0, i = 0; y < LCH; y++) for (let x = 0; x < LCW; x++, i++) if (terrain(map.col, map.row, x * CELL + 2, y * CELL + 2, 3) || edge[(y * CELL + 2) * LW + x * CELL + 2] === SEA) blocked[i] = 1;
   for (let y = 0, i = 0; y < LCH; y++) for (let x = 0; x < LCW; x++, i++) for (let b = -1; b < 3 && !near[i]; b++) for (let a = -1; a < 3; a++) { const xx = x + a, yy = y + b; if (xx >= 0 && yy >= 0 && xx < LCW && yy < LCH && blocked[yy * LCW + xx]) { near[i] = 1; break; } }
   const blockedAt = (x, y, r = 0) => { for (const [a, b] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) { const xx = Math.floor((x + a) / CELL), yy = Math.floor((y + b) / CELL); if (xx < 0 || yy < 0 || xx >= LCW || yy >= LCH || blocked[yy * LCW + xx]) return true; } return false; };
   const zone = new Uint8Array(LCN), cellsOf = GLADES.map(() => []);
@@ -195,6 +210,7 @@ export function makeLand(seed = 1, mapId = 0) {
     let cell = y * LCW + x;
     if (blocked[cell]) { cell = -1; for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { const xx = x + a, yy = y + b; if (xx >= 0 && yy >= 0 && xx < LCW && yy < LCH && !blocked[yy * LCW + xx]) { cell = yy * LCW + xx; break; } } }
     if (cell < 0 || edge[Math.min(LH - 1, Math.floor(ty)) * LW + Math.min(LW - 1, Math.floor(tx))] || road[Math.min(LH - 1, Math.floor(ty)) * LW + Math.min(LW - 1, Math.floor(tx))] || !bankClear(tx, ty)) continue;
+    if (map.flora < 1 && hash(x + k * 13, y - k * 17, seed + 113) > map.flora) continue; // sparse on snow and dry plains
     // Tall grass grows in broad, ragged patches; between them lie open lawns of short green turf, with only
     // the odd tuft or flower. A patch thins out over a few texels at its edge rather than stopping dead.
     // And tall grass only really takes hold in a few broad grassy stretches of each land; elsewhere the ground is
@@ -232,9 +248,9 @@ const LOOK = {
   hollow: { dead: [132, 121, 106], crack: [86, 76, 66], soil: [78, 58, 44], grass: [88, 138, 68], lush: [116, 160, 76], water: [66, 150, 182], flowers: ['#fff4f0', '#ffd34d', '#ff8fb1', '#b890ff', '#ff9d5c'], mist: [214, 208, 192], road: [150, 118, 84] },
   // Each region's grass takes its own colour, the same as its restored ground: dry gold drylands in Ember Basin,
   // pink in Coral Reach, violet in Sporewood, icy blue in Glimmerdeep.
-  ember: { dead: [92, 86, 88], crack: [48, 42, 46], soil: [70, 48, 44], grass: [184, 136, 62], lush: [214, 160, 66], water: [56, 170, 170], flowers: ['#ffe9b0', '#ff7a4d', '#ffc247', '#ff5f7e', '#fff4e0'], mist: [190, 180, 178] },
+  ember: { flora: .5, dead: [92, 86, 88], crack: [48, 42, 46], soil: [70, 48, 44], grass: [184, 136, 62], lush: [214, 160, 66], water: [56, 170, 170], flowers: ['#ffe9b0', '#ff7a4d', '#ffc247', '#ff5f7e', '#fff4e0'], mist: [190, 180, 178] },
   // Frostmere lies under snow: pale frosted grass, white drifts and cold blue water.
-  frost: { dead: [176, 182, 194], crack: [122, 130, 146], soil: [108, 104, 118], grass: [184, 206, 216], lush: [228, 238, 246], water: [96, 170, 222], flowers: ['#ffffff', '#d8ecff', '#b8e0ff', '#e8d8ff', '#ffffff'], mist: [232, 238, 246], peak: [246, 250, 255] },
+  frost: { flora: .4, dead: [176, 182, 194], crack: [122, 130, 146], soil: [108, 104, 118], grass: [184, 206, 216], lush: [228, 238, 246], water: [96, 170, 222], flowers: ['#ffffff', '#d8ecff', '#b8e0ff', '#e8d8ff', '#ffffff'], mist: [232, 238, 246], peak: [246, 250, 255] },
   sun: { dead: [168, 150, 118], crack: [112, 94, 70], soil: [112, 82, 54], grass: [122, 172, 76], lush: [170, 196, 84], water: [52, 176, 190], flowers: ['#fff6d8', '#ff6f6f', '#ffb347', '#ff8fc8', '#7fd8d0'], mist: [232, 222, 196], sand: [240, 216, 160], road: [188, 156, 108] },
   mist: { dead: [104, 104, 92], crack: [62, 64, 56], soil: [52, 48, 40], grass: [72, 130, 96], lush: [96, 156, 118], water: [78, 142, 150], flowers: ['#e8fff0', '#b8f0d0', '#d8b8ff', '#fff2a8', '#88d8c8'], mist: [196, 210, 200] },
   coral: { dead: [150, 134, 136], crack: [98, 84, 92], soil: [98, 66, 80], grass: [206, 122, 146], lush: [236, 140, 160], water: [64, 196, 206], flowers: ['#fff0f4', '#ff7fa8', '#ffb09a', '#a0f0e0', '#ffe28a'], mist: [234, 212, 220], sand: [250, 214, 200] },
@@ -267,7 +283,7 @@ export const REGIONS = [...new Set(LANDS.map(L => L.name))].map(name => ({ name,
 // in Frostmere, Glimmerdeep, Mistfen and Ember Basin into the great lake in Hollow Vale, and one river runs out of
 // the lake south through Sunfall Coast to the sea. Three small ponds lie where no river reaches. A narrow path runs
 // from the farm in Sunfall Coast down to the fishing pier on the coast. Points are [x, y, width].
-export const WATER = { rivers: [], ponds: [], path: [], farm: null, pier: null };
+export const WATER = { rivers: [], ponds: [], springs: [], path: [], farm: null, pier: null };
 const onLand = (gx, gy) => { const col = Math.floor(gx / LW), row = Math.floor(gy / LH); if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return false; return !terrain(col, row, gx - col * LW, gy - row * LH); };
 function inland(x, y, m) { // the nearest point to (x, y) with land all round it for m texels
   for (let r = 0; r < 700; r += 10) for (let a = 0; a < 6.283; a += r ? 10 / r : 7) {
@@ -276,10 +292,10 @@ function inland(x, y, m) { // the nearest point to (x, y) with land all round it
   }
   return { x, y };
 }
-function course(a, b, w0, w1, k, sway, extra = 0) {
+function course(a, b, w0, w1, k, sway, extra = 0, wave = 85) {
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len, out = [];
   for (let d = 0; d <= len + extra; d++) {
-    const t = Math.min(1, d / len), s = (fbm(d / 85, k * 7.1, 905) - .5) * sway * Math.sin(t * Math.PI);
+    const t = Math.min(1, d / len), s = (fbm(d / wave, k * 7.1, 905) - .5) * sway * Math.sin(t * Math.PI);
     out.push([a.x + (b.x - a.x) * d / len + nx * s, a.y + (b.y - a.y) * d / len + ny * s, w0 + (w1 - w0) * t + (noise(d / 26, k, 907) - .5) * .8]);
   }
   return out;
@@ -287,17 +303,28 @@ function course(a, b, w0, w1, k, sway, extra = 0) {
 function planWater() {
   const lake = { x: LW + 480, y: LH + 320 }, rx = LAKE.r * .86, ry = rx / LAKE.squash;
   const into = p => { const a = Math.atan2(p.y - lake.y, p.x - lake.x); return { x: lake.x + Math.cos(a) * rx * .6, y: lake.y + Math.sin(a) * ry * .6 }; };
-  WATER.rivers = [[LW * 1.82, LH * .42, 1], [LW * .48, LH * .5, 2], [LW * .22, LH * 1.52, 3], [LW * 2.74, LH * 1.38, 4]].map(([x, y, k]) => {
-    const s = inland(x, y, 90), path = course(s, into(s), 1.2, 3.3, k, 170);
-    for (let d = 0; d < 10 && d < path.length; d++) path[d][2] += (10 - d) * .12; // a little seep where the stream rises
-    return path;
-  });
+  // Like a real watershed: streams rise at springs in the uplands round the edge of the heartland and run down
+  // in long, easy meanders. The stream from Glimmerdeep joins the one from Frostmere before they reach the lake; the
+  // stream from Ember Basin flows in from the east; one river flows out south to the sea, and the stream from Mistfen
+  // joins it on the way, so the water branches like a real river system rather than meeting at one point.
+  const rim = p => { const a = Math.atan2(p.y - lake.y, p.x - lake.x); return { x: lake.x + Math.cos(a) * rx * .82, y: lake.y + Math.sin(a) * ry * .82 }; };
+  const spring = (x, y) => inland(x, y, 90), seep = path => { for (let d = 0; d < 8 && d < path.length; d++) path[d][2] += (8 - d) * .1; return path; };
+  const frostS = spring(LW * 1.8, LH * .45), glimS = spring(LW * .55, LH * .55), mistS = spring(LW * .4, LH * 1.5), emberS = spring(LW * 2.55, LH * 1.18);
+  const frost = seep(course(frostS, rim(frostS), 1.8, 4, 1, 300, 0, 170));
+  const meet = frost[Math.floor(frost.length * .62)], glim = seep(course(glimS, { x: meet[0], y: meet[1] }, 1.6, 2.8, 2, 260, 0, 150));
+  for (let k = Math.floor(frost.length * .62); k < frost.length; k++) frost[k][2] += .9; // the stream runs fuller below where they meet
+  const ember = seep(course(emberS, rim(emberS), 1.8, 4, 4, 300, 0, 170));
+  WATER.rivers = [frost, glim, ember];
+  WATER.springs = [frostS, glimS, mistS, emberS];
   let my = lake.y + ry; while (my < LH * 3 && onLand(lake.x, my + 30)) my += 4;
-  const out = course({ x: lake.x, y: lake.y + ry * .6 }, { x: lake.x, y: my + 30 }, 3.6, 5.6, 9, 190, 40);
+  const out = course({ x: lake.x, y: lake.y + ry * .82 }, { x: lake.x, y: my + 30 }, 4.4, 6.2, 9, 300, 40, 190);
   out.forEach((p, d) => { const t = d / out.length; if (t > .82) p[2] += (t - .82) / .18 * 5; }); // a little delta at the sea
   WATER.rivers.push(out);
+  const join = out[Math.floor(out.length * .4)], mist = seep(course(mistS, { x: join[0], y: join[1] }, 1.8, 3.8, 3, 280, 0, 170));
+  for (let k = Math.floor(out.length * .4); k < out.length; k++) out[k][2] += .8; // fuller below the meeting
+  WATER.rivers.push(mist);
   WATER.ponds = [[LW * .5, LH * 2.3, 10], [LW * 2.5, LH * 2.25, 11], [LW * 1.62, LH * 3 + 290, 10]].map(([x, y, r]) => ({ ...inland(x, y, 50), r }));
-  // The fishing dock on the lake's eastern shore; the farm west of the river in Sunfall Coast.
+  // The farm west of the river in Sunfall Coast.
   WATER.farm = inland(LW * 1.3, LH * 2.22, 70);
   // The fishing pier: on the coast nearest the farm (well clear of the river mouth), it starts on dry land and
   // runs straight out to sea, square to the shore. Its direction is the way from the land around it to the sea.
@@ -391,17 +418,17 @@ export async function makeWorld(progress = async () => {}) {
     for (let x = 0; x < TW; x++, i++) {
       const gx = x >> 2, tx = (x & 3) / 4, k = gy * gw + gx, d = hash(x, y, 617) - .5;
       const dx = (wxG[k] * (1 - tx) + wxG[k + 1] * tx) * (1 - ty) + (wxG[k + gw] * (1 - tx) + wxG[k + gw + 1] * tx) * ty, dy = (wyG[k] * (1 - tx) + wyG[k + 1] * tx) * (1 - ty) + (wyG[k + gw] * (1 - tx) + wyG[k + gw + 1] * tx) * ty;
-      const by = y + dy - d * 16; // the island across the channel never borrows the mainland's colours, or the reverse
-      biome[i] = lookOf(landAtTexel(x + dx + d * 16, y >= LH * 3 ? Math.max(LH * 3, by) : Math.min(LH * 3 - 1, by)));
+      const by = y + dy - d * 44; // the island across the channel never borrows the mainland's colours, or the reverse
+      biome[i] = lookOf(landAtTexel(x + dx + d * 44, y >= LH * 3 ? Math.max(LH * 3, by) : Math.min(LH * 3 - 1, by)));
     }
   }
   // A last look over the whole continent: nothing stands in water, on a road or crop row, on rock or sand, or on
   // top of something else. A misplaced tree or stone shuffles a little way over, or is left out.
   // The farm and the fishing pier are places that earn seeds once restored. The farm is ChatGPT art (assets/places.png);
   // the pier is drawn plank by plank along its line, so it always starts on land and points out to sea.
-  { const F = WATER.farm, D = { x: WATER.pier.x0, y: WATER.pier.y0 }, keep = objects.filter(o => Math.hypot(o.x * CELL - F.x, o.y * CELL - F.y) > 70 && Math.hypot(o.x * CELL - D.x, o.y * CELL - D.y) > 36);
+  { const F = WATER.farm, D = { x: WATER.pier.x0, y: WATER.pier.y0 }, keep = objects.filter(o => Math.hypot(o.x * CELL - F.x, o.y * CELL - F.y) > 70 && Math.hypot(o.x * CELL - D.x, o.y * CELL - D.y) > 36 && WATER.springs.every(q => Math.hypot(o.x * CELL - q.x, o.y * CELL - q.y) > 34));
     objects.length = 0; objects.push(...keep);
-    for (const [P, place, dead, size] of [[F, 'farm', 0, 66], [D, 'pier', 2, 40]]) objects.push({ id: objects.length, zone: 0, dead, live: dead + 1, x: P.x / CELL, y: P.y / CELL, size, hp: 3, place, land: landAtTexel(P.x, P.y) }); }
+    for (const [P, place, dead, size] of [[F, 'farm', 0, 66], [D, 'pier', 2, 40], ...WATER.springs.map(q => [{ x: q.x, y: q.y + 5 }, 'spring', 4, 30])]) objects.push({ id: objects.length, zone: 0, dead, live: dead + 1, x: P.x / CELL, y: P.y / CELL, size, hp: 3, place, land: landAtTexel(P.x, P.y) }); }
   for (const o of objects) { o.worth = o.size; o.size *= SHRINK; }
   const solid = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= TW || y >= TH) return true; const i = y * TW + x; return edge[i] || road[i] || waterT[i] < 255; };
   const scanClear = (x, y, half, deep, step) => { for (let yy = y - deep; yy <= y + 4; yy += step) for (let xx = x - half; xx <= x + half; xx += step) if (solid(xx, yy)) return false; return true; };
