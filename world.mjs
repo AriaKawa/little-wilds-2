@@ -339,7 +339,6 @@ function planWater() {
   WATER.path = course({ x: F.x + 4, y: F.y + 6 }, { x: land.x - dx * 4, y: land.y - dy * 4 }, 2.3, 2.3, 11, 40);
 }
 
-export const landAt = i => LANDS[i % LANDS.length];
 
 // Every glade on the continent: land * 9 + its place in that land's tree.
 export const ZONES = [];
@@ -475,7 +474,6 @@ export async function makeWorld(progress = async () => {}) {
 }
 // Trees, stones and buildings are drawn at this share of the size the land was laid out for.
 export const SHRINK = .7, TREE = 38 * SHRINK; // TREE: a grown planted tree.
-export const landOfCell = (w, i) => ZONES[w.zone[i]].land;
 export const landAtTexel = (x, y) => LAND_GRID[Math.min(ROWS - 1, Math.max(0, Math.floor(y / LH))) * COLS + Math.min(COLS - 1, Math.max(0, Math.floor(x / LW)))];
 const LAND_GRID = new Array(COLS * ROWS).fill(-1);
 LANDS.forEach((l, id) => { LAND_GRID[l.row * COLS + l.col] = id; });

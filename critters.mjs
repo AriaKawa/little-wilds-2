@@ -254,25 +254,6 @@ export const CRITTERS = {
       ];
     },
   },
-  ram: { stride: 2, // Auric Steppe: a golden-fleeced ram, lumpy wool, a dark face and curled horns.
-    w: 36, h: 30, pal: { b: '#efe0bc', f: '#7a5a3a', x: '#d9a440', k: '#4a3624', e: '#140c08' },
-    build(pose, p) {
-      const sleep = pose === 'sleep', drop = sleep ? 7 : bobOf(pose, p);
-      const L = [{ x: -4.5, y: -9, w: 2.4, c: 'f', far: 1, pair: 1, hoof: 'k', stride: 2 }, { x: 4, y: -9, w: 2.4, c: 'f', far: 1, hoof: 'k', stride: 2 }, { x: -6, y: -9, w: 2.6, c: 'f', hoof: 'k', stride: 2 }, { x: 5.5, y: -9, w: 2.6, c: 'f', pair: 1, hoof: 'k', stride: 2 }];
-      const head = [{ e: [.6, .6, 2.8, 2.4, .35], c: 'f' }, { e: [3, 2, 1.7, 1.4], c: 'f' }, { d: [[4, 2]], c: 'k' },
-        { e: [-1.2, -.4, 2.8, 2.8], c: 'x' }, { e: [-1, -.2, 1.3, 1.3], c: 'x_', ol: false }, { d: [[-2, 2], [-1, 2]], c: 'x!' }, eye(1, -1, sleep)];
-      let [ax, ay, ang] = pose === 'graze' ? [11, -5, .8] : sleep ? [9, -9, .1] : [10, -17, 0]; if (!sleep) ay += drop;
-      return [
-        ...(sleep ? [] : legs(L.slice(0, 2), pose, p, drop)),
-        { e: [0, -12.5 + drop, 9, 5.4], c: 'b' }, { e: [-5, -14.5 + drop, 4.4, 4], c: 'b' }, { e: [1, -15.5 + drop, 4.4, 3.6], c: 'b' }, { e: [6, -13.5 + drop, 4, 4.2], c: 'b' }, { e: [-8, -12 + drop, 2.6, 3.4], c: 'b' },
-        { d: [[-6, -15 + drop], [-2, -16 + drop], [2, -17 + drop], [5, -15 + drop], [-4, -12 + drop], [1, -13 + drop], [-8, -14 + drop]], c: 'b^' },
-        { d: [[-3, -10 + drop], [3, -9 + drop], [-7, -9 + drop]], c: 'b_' },
-        ...(sleep ? [] : legs(L.slice(2), pose, p, drop)),
-        { l: [6, -14 + drop, ax, ay, 4.8], c: 'b' },
-        ...rot(ax, ay, ang, head),
-      ];
-    },
-  },
   crab: { // Coral Reach: a coral crab, claws up, eyes on stalks. Crabs face you, so they are the same either way.
     w: 26, h: 18, pal: { b: '#e8706e', l: '#ffc8b8', e: '#1e0c0c' },
     build(pose, p) {

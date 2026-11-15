@@ -1,9 +1,9 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=34';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=34';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=34';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=34';
-import { steer, standable, overWater, escape } from './nav.mjs?v=34';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=35';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=35';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=35';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=35';
+import { steer, standable, overWater, escape } from './nav.mjs?v=35';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -247,7 +247,6 @@ export function createRenderer(canvas, world, land, images) {
   function artSrc(o, frame) {
     const b = images.biomes[o.art], cell = (img, n) => [img, n % 4 * 96, (n >> 2) * 96, 96, 96];
     if (o.place && images.places) return [images.places, frame * 96, 0, 96, 96]; // one row: farm, (old dock), spring
-    if (o.mark) return cell(images.landmarks, frame);
     if (b && BIOME[frame] !== undefined) return frame <= KIND_BLOSSOM ? treeBuild(cell(b, BIOME[frame]), Math.imul(o.id + 7, 2654435761) >>> 30) : cell(b, BIOME[frame]);
     return [images.world, frame % 4 * SIZE, Math.floor(frame / 4) * SIZE, SIZE, SIZE];
   }
@@ -325,19 +324,22 @@ export function createRenderer(canvas, world, land, images) {
   // over, and a passing gust swaps in the bent layer along its band. Chunks bake at a resolution to suit the zoom.
   const bakeRes = () => !flora[0].strands ? 1 : cam.z < 1.5 ? 1 : cam.z < 4 ? 2 : 3;
   const CAP = { 1: 1e9, 2: 300, 3: 110 };
+  // Each tile is baked twice: `c` holds the plants that stand still, `all` the whole meadow (the swaying plants too,
+  // standing straight). Away from the wind, and whenever the camera is not close, `all` alone is drawn: one image per tile.
   function bakeChunk(index, s) {
     let b = baked.get(index);
     const { cw, ch, r: sr } = flora[0], r = bakeRes(), lyke = !!flora[0].strands;
     if (b && (b.r !== r || !!b.l !== lyke)) { baked.delete(index); b = null; }
     if (!b) {
       // Fine-bladed chunks are large, so only the most recent are kept.
-      if (baked.size > CAP[r]) for (const key of baked.keys()) { baked.delete(key); if (baked.size <= CAP[r] * .75) break; }
+      if (baked.size > CAP[r]) for (const key of baked.keys()) { baked.delete(key); superDirty[superOf(key)] = 1; if (baked.size <= CAP[r] * .75) break; }
       const mk = () => { const c = document.createElement('canvas'); c.width = (FC + 18) * r; c.height = (FC + 14) * r; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; return { c, g }; };
-      const m = mk(); b = { c: m.c, g: m.g, r, v: mk(), l: lyke ? mk() : null, l2: lyke ? mk() : null }; baked.set(index, b);
+      const m = mk(); b = { c: m.c, g: m.g, r, all: mk(), l: lyke ? mk() : null, l2: lyke ? mk() : null }; baked.set(index, b);
     }
-    const cx = index % FCOLS * FC, cy = Math.floor(index / FCOLS) * FC, f = shown || s.h;
-    b.g.clearRect(0, 0, b.c.width, b.c.height); b.v.g.clearRect(0, 0, b.c.width, b.c.height); b.empty = true; b.lEmpty = true; b.vEmpty = true;
-    if (b.l) { b.l.g.clearRect(0, 0, b.c.width, b.c.height); b.l2.g.clearRect(0, 0, b.c.width, b.c.height); }
+    superDirty[superOf(index)] = 1;
+    const cx = index % FCOLS * FC, cy = Math.floor(index / FCOLS) * FC, f = shown || s.h, W2 = b.c.width, H2 = b.c.height;
+    b.g.clearRect(0, 0, W2, H2); b.all.g.clearRect(0, 0, W2, H2); b.empty = true; b.allEmpty = true; b.lEmpty = true;
+    if (b.l) { b.l.g.clearRect(0, 0, W2, H2); b.l2.g.clearRect(0, 0, W2, H2); }
     if (grass === 'none') return;
     if (lyke) {
       const S = strandsOf(index);
@@ -351,14 +353,35 @@ export function createRenderer(canvas, world, land, images) {
     }
     for (let k = F.start[index], end = k + F.count[index]; k < end; k++) {
       const h = f[F.cell[k]];
-      if (h < F.thr[k] || lyke && isStrandKind(k)) continue;
-      // The plants that sway in the wind close up are baked too, on their own layer, standing still: they fill the
-      // meadow until the camera is close enough for them to be drawn one by one, so nothing pops in.
-      const live = F.phase[k] < LIVE[grass], g = live ? b.v.g : b.g;
-      if (live) b.vEmpty = false; else b.empty = false;
+      if (h < F.thr[k] || F.phase[k] < LIVE[grass] || lyke && isStrandKind(k)) continue;
+      b.empty = false;
       const grow = Math.min(1, (h - F.thr[k]) / .07 + .25), dh = Math.round(ch * r * grow);
-      g.drawImage(plants(F.x[k], F.y[k]), col(k, 1) * cw * sr, F.kind[k] * ch * sr, cw * sr, ch * sr, Math.round((F.x[k] - cx + 9 - cw / 2) * r), Math.round((F.y[k] - cy + 14) * r - dh), cw * r, dh);
+      b.g.drawImage(plants(F.x[k], F.y[k]), col(k, 1) * cw * sr, F.kind[k] * ch * sr, cw * sr, ch * sr, Math.round((F.x[k] - cx + 9 - cw / 2) * r), Math.round((F.y[k] - cy + 14) * r - dh), cw * r, dh);
     }
+    if (!b.empty) { b.all.g.drawImage(b.c, 0, 0); b.allEmpty = false; }
+    for (let k = F.start[index], end = k + F.count[index]; k < end; k++) { // the swaying plants, standing straight
+      const h = f[F.cell[k]];
+      if (h < F.thr[k] || F.phase[k] >= LIVE[grass] || lyke && isStrandKind(k)) continue;
+      b.allEmpty = false;
+      const grow = Math.min(1, (h - F.thr[k]) / .07 + .25), dh = Math.round(ch * r * grow);
+      b.all.g.drawImage(plants(F.x[k], F.y[k]), col(k, 1) * cw * sr, F.kind[k] * ch * sr, cw * sr, ch * sr, Math.round((F.x[k] - cx + 9 - cw / 2) * r), Math.round((F.y[k] - cy + 14) * r - dh), cw * r, dh);
+    }
+  }
+  // Further out, sixteen tiles (4 x 4) are merged into one image, so a wide view of the meadow is a few dozen draws
+  // instead of hundreds. A merged image is rebuilt when any of its tiles is baked again.
+  const SUP = 4, SCOLS = Math.ceil(FCOLS / SUP), SROWS = Math.ceil(FROWS / SUP), supers = new Map(), superDirty = new Uint8Array(SCOLS * SROWS).fill(1);
+  const superOf = i => Math.floor(Math.floor(i / FCOLS) / SUP) * SCOLS + Math.floor(i % FCOLS / SUP);
+  function bakeSuper(k) { // false while one of its tiles is still waiting to be baked
+    const x0 = k % SCOLS * SUP, y0 = Math.floor(k / SCOLS) * SUP, kids = [];
+    for (let y = y0; y < Math.min(FROWS, y0 + SUP); y++) for (let x = x0; x < Math.min(FCOLS, x0 + SUP); x++) { const i = y * FCOLS + x, b = baked.get(i); if (!b || floraDirty[i] || b.r !== 1) return false; kids.push([x - x0, y - y0, b]); }
+    let S = supers.get(k);
+    if (!S) { const c = document.createElement('canvas'); c.width = SUP * FC + 18; c.height = SUP * FC + 14; S = { c, g: c.getContext('2d') }; S.g.imageSmoothingEnabled = false; supers.set(k, S); }
+    S.g.clearRect(0, 0, S.c.width, S.c.height); S.empty = true;
+    for (const [dx, dy, b] of kids) {
+      if (!b.allEmpty) { S.g.drawImage(b.all.c, dx * FC, dy * FC); S.empty = false; }
+      if (b.l && !b.lEmpty) { S.g.drawImage(b.l.c, dx * FC, dy * FC); S.empty = false; }
+    }
+    superDirty[k] = 0; return true;
   }
   // The stretches of a gust band, inside the box at (x, y) w by h texels, where the wind is strong enough to
   // bend the grass: returns a function that adds them to the current path as screen quads, or null if none.
@@ -373,9 +396,10 @@ export function createRenderer(canvas, world, land, images) {
     }
     return quads.length ? () => { for (const q of quads) { ctx.moveTo(sx(q[0][0]), sy(q[0][1])); for (let m = 1; m < 4; m++) ctx.lineTo(sx(q[m][0]), sy(q[m][1])); ctx.closePath(); } } : null;
   }
-  // Most plants are baked into per-chunk images, so a full meadow costs a few draws rather than thousands.
-  // A smaller share stays live to carry the wind. From far away the meadow is left to the ground colours, and it
-  // fades in as the camera comes down rather than appearing all at once.
+  // Most plants are baked into per-chunk images, so a full meadow costs a few draws rather than thousands. Close up,
+  // the plants that carry the wind are drawn one by one, but only inside a passing gust; everywhere else the baked
+  // image already shows them standing. From far away the meadow is left to the ground colours, and it fades in as
+  // the camera comes down rather than appearing all at once.
   const chunksIn = (z, pad = 0) => { const out = [], x0 = cam.x - W / 2 / z - 12 - pad, x1 = cam.x + W / 2 / z + 12 + pad, y0 = cam.y - H / 2 / z - pad, y1 = cam.y + H / 2 / z + 14 + pad;
     for (let cy = Math.max(0, Math.floor(y0 / FC)); cy <= Math.min(FROWS - 1, Math.floor(y1 / FC)); cy++) for (let cx = Math.max(0, Math.floor(x0 / FC)); cx <= Math.min(FCOLS - 1, Math.floor(x1 / FC)); cx++) out.push(cy * FCOLS + cx);
     return out; };
@@ -385,38 +409,45 @@ export function createRenderer(canvas, world, land, images) {
     const t = reduced || s.paused ? 0 : time / 1000, f = shown || s.h, fade = clamp((z - .6) / .25, 0, 1);
     // Bake what is on screen, nearest the middle first, and when zoomed out the middle of the view as it will be
     // once zoomed in, so the meadow is ready before the camera gets there.
-    const want = bakeRes(), lyke = !!flora[0].strands, end = performance.now() + 4;
+    const want = bakeRes(), lyke = !!flora[0].strands, end = performance.now() + (dt > .02 ? 2 : 3.5); // less baking on a frame already running late
     const todo = chunksIn(Math.max(z, .85)).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
     if (todo.length) {
       const mx = cam.x / FC, my = cam.y / FC; todo.sort((a, b) => Math.hypot(a % FCOLS + .5 - mx, Math.floor(a / FCOLS) + .5 - my) - Math.hypot(b % FCOLS + .5 - mx, Math.floor(b / FCOLS) + .5 - my));
       for (const i of todo) { if (performance.now() > end) break; floraDirty[i] = 0; bakeChunk(i, s); }
     }
     if (!fade) return;
-    const visible = chunksIn(z), closeUp = z >= 1.7 && quality >= 1;
+    const visible = chunksIn(z), closeUp = z >= 1.7 && quality >= 1, wind = t && quality >= 1;
     ctx.globalAlpha = fade;
+    if (z < (lyke ? 1 : 1.5)) { // wide views: the merged images, falling back to single tiles while one is rebuilt
+      const seen = new Set(), loose = [];
+      for (const i of visible) { const k = superOf(i); if (seen.has(k)) continue; seen.add(k); if (superDirty[k] && (performance.now() > end + 2 || !bakeSuper(k))) { for (const j of visible) if (superOf(j) === k) loose.push(j); continue; }
+        const S = supers.get(k); if (S && !S.empty) ctx.drawImage(S.c, sx(k % SCOLS * SUP * FC - 9), sy(Math.floor(k / SCOLS) * SUP * FC - 14), S.c.width * z, S.c.height * z); }
+      for (const i of loose) { const b = baked.get(i); if (!b) continue; const X = sx(i % FCOLS * FC - 9), Y = sy(Math.floor(i / FCOLS) * FC - 14), w = b.c.width * z / b.r, hh = b.c.height * z / b.r; if (!b.allEmpty) ctx.drawImage(b.all.c, X, Y, w, hh); if (b.l && !b.lEmpty) ctx.drawImage(b.l.c, X, Y, w, hh); }
+      ctx.globalAlpha = 1; return;
+    }
+    const gusty = [];
     for (const i of visible) {
       const b = baked.get(i); if (!b) continue;
-      const X = sx(i % FCOLS * FC - 9), Y = sy(Math.floor(i / FCOLS) * FC - 14), w = b.c.width * z / b.r, hh = b.c.height * z / b.r;
-      if (!b.empty) ctx.drawImage(b.c, X, Y, w, hh);
-      if (!closeUp && b.v && !b.vEmpty) ctx.drawImage(b.v.c, X, Y, w, hh);
-      if (b.l && !b.lEmpty) {
-        const bands = t && quality >= 1 ? gustBands(i % FCOLS * FC - 9, Math.floor(i / FCOLS) * FC - 14, b.c.width / b.r, b.c.height / b.r, t) : null;
-        if (!bands) { ctx.drawImage(b.l.c, X, Y, w, hh); continue; }
-        ctx.save(); ctx.beginPath(); ctx.rect(X, Y, w, hh); bands(); ctx.clip('evenodd'); ctx.drawImage(b.l.c, X, Y, w, hh); ctx.restore();
-        ctx.save(); ctx.beginPath(); bands(); ctx.clip(); ctx.drawImage(b.l2.c, X, Y, w, hh); ctx.restore();
-      }
+      const tx = i % FCOLS * FC - 9, ty = Math.floor(i / FCOLS) * FC - 14, X = sx(tx), Y = sy(ty), w = b.c.width * z / b.r, hh = b.c.height * z / b.r;
+      const bands = wind && (closeUp || b.l && !b.lEmpty) ? gustBands(tx, ty, b.c.width / b.r, b.c.height / b.r, t) : null;
+      if (!bands) { if (!b.allEmpty) ctx.drawImage(b.all.c, X, Y, w, hh); if (b.l && !b.lEmpty) ctx.drawImage(b.l.c, X, Y, w, hh); continue; }
+      // In a gust: outside it the still image as usual; inside it the plants that never move, the bent layer of
+      // fine blades, and (close up) the swaying plants drawn one by one below.
+      ctx.save(); ctx.beginPath(); ctx.rect(X, Y, w, hh); bands(); ctx.clip('evenodd');
+      if (!b.allEmpty) ctx.drawImage(b.all.c, X, Y, w, hh); if (b.l && !b.lEmpty) ctx.drawImage(b.l.c, X, Y, w, hh); ctx.restore();
+      ctx.save(); ctx.beginPath(); bands(); ctx.clip();
+      if (closeUp) { if (!b.empty) ctx.drawImage(b.c, X, Y, w, hh); gusty.push(i); } else if (!b.allEmpty) ctx.drawImage(b.all.c, X, Y, w, hh);
+      if (b.l && !b.lEmpty) ctx.drawImage(b.l2.c, X, Y, w, hh); ctx.restore();
     }
     ctx.globalAlpha = 1;
-    if (!closeUp) return;
-    for (const i of visible) {
-      const { cw, ch, r } = flora[0];
-      for (let k = F.start[i], stop = k + F.count[i]; k < stop; k++) {
-        if (F.phase[k] >= LIVE[grass] || lyke && isStrandKind(k)) continue;
-        const h = f[F.cell[k]];
-        if (h < F.thr[k]) continue;
-        const px = F.x[k], py = F.y[k], gust = t ? gustAt(px, py, t) : 0, pose = gust > .25 + F.phase[k] * 1.4 ? 2 : 1, grow = Math.min(1, (h - F.thr[k]) / .07 + .25), dw = cw * z, dh = ch * z * grow;
-        ctx.drawImage(plants(px, py), col(k, pose) * cw * r, F.kind[k] * ch * r, cw * r, ch * r, sx(px) - dw / 2, sy(py) - dh, dw, dh);
-      }
+    const { cw, ch, r } = flora[0];
+    for (const i of gusty) for (let k = F.start[i], stop = k + F.count[i]; k < stop; k++) {
+      if (F.phase[k] >= LIVE[grass] || lyke && isStrandKind(k)) continue;
+      const px = F.x[k], py = F.y[k], gust = Math.max(gustAt(px, py, t), gustAt(px, py - 6, t));
+      if (gust <= .3) continue; // outside the gust: the baked image shows it, standing straight
+      const h = f[F.cell[k]]; if (h < F.thr[k]) continue;
+      const pose = gustAt(px, py, t) > .25 + F.phase[k] * 1.4 ? 2 : 1, grow = Math.min(1, (h - F.thr[k]) / .07 + .25), dw = cw * z, dh = ch * z * grow;
+      ctx.drawImage(plants(px, py), col(k, pose) * cw * r, F.kind[k] * ch * r, cw * r, ch * r, sx(px) - dw / 2, sy(py) - dh, dw, dh);
     }
   }
   // Creatures walk in the meadow, not on top of it: the blades just in front of one are drawn again over its
@@ -455,11 +486,13 @@ export function createRenderer(canvas, world, land, images) {
   function drawProps(s, time, dt, carry) {
     s_ = s;
     const items = [], z = cam.z, lx = cam.x - W / 2 / z - 70, hx = cam.x + W / 2 / z + 70, ly = cam.y - H / 2 / z - 10, hy = cam.y + H / 2 / z + 120;
-    for (const o of world.objects) { if (o.place === 'pier') continue; const x = o.x * CELL, y = o.y * CELL; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, o }); }
+    // Far out, anything smaller than a few pixels on screen is left to the ground colours: it could not be seen anyway.
+    const tiny = 6 / z;
+    for (const o of world.objects) { if (o.place === 'pier' || o.size < tiny && !o.place) continue; const x = o.x * CELL, y = o.y * CELL; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, o }); }
     for (const a of s.spirits) if (a !== carry) items.push({ y: (a.ry ?? a.y) * CELL, a });
     const night = clamp((Math.cos((s.age / 480) % 1 * 6.283) * -1 - .35) / .65, 0, 1) > .4;
     for (const c of critters) if (PETS[c.kind]) { if (!s.paused) stepPet(s, c, dt, night); const x = c.x, y = c.y; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, c }); }
-    for (const t of s.trees) { const y = t.y * CELL; if (t.x * CELL > lx && t.x * CELL < hx && y > ly && y < hy) items.push({ y, t }); }
+    for (const t of s.trees) { const y = t.y * CELL; if (z < .5 && hash(t.x * 7 | 0, t.y * 7 | 0, 3) > .5) continue; if (t.x * CELL > lx && t.x * CELL < hx && y > ly && y < hy) items.push({ y, t }); }
     for (const f of folk) { if (!s.paused) stepFolk(f, dt); if (f.x > lx && f.x < hx && f.y > ly && f.y < hy) items.push({ y: f.sortY ?? f.y, f }); }
     items.sort((a, b) => a.y - b.y);
     const atlas = images.world, spirits = images.spirits, tNow = time / 1000;
@@ -467,7 +500,7 @@ export function createRenderer(canvas, world, land, images) {
     for (const it of items) {
       if (it.o) {
         const o = it.o, x = sx(o.x * CELL), y = sy(o.y * CELL), hp = s.objHp ? s.objHp[o.id] : o.hp, size = o.size * z, born = revives.get(o.id);
-        const foot = z > .9 ? underfoot(artSrc(o, hp > 0 ? o.dead : o.live), o.size, o.art, x, y, o.mark) : null;
+        const foot = z > .9 ? underfoot(artSrc(o, hp > 0 ? o.dead : o.live), o.size, o.art, x, y, o.place === 'farm') : null;
         if (hp > 0) {
           art(o, o.dead, x, y, size);
           const goal = 1 - hp / o.hp, was = rises.get(o.id) || 0, rise = was + (goal - was) * Math.min(1, dt * 10);
@@ -480,10 +513,10 @@ export function createRenderer(canvas, world, land, images) {
         } else {
           let k = 1;
           if (born !== undefined) { const a = (time - born) / 620; if (a < 1) k = 1 + Math.sin(a * Math.PI) * .22 * (1 - a) + (a < .25 ? (a / .25 - 1) * .55 : 0); else revives.delete(o.id); }
-          const sway = o.size > 18 && !o.mark && !reduced && !s.paused ? Math.sin(tNow * .9 - o.x * .07) * .004 + gustAt(o.x * CELL, o.y * CELL, tNow) * .022 : 0;
+          const sway = o.size > 18 && !o.place && !reduced && !s.paused ? Math.sin(tNow * .9 - o.x * .07) * .004 + gustAt(o.x * CELL, o.y * CELL, tNow) * .022 : 0;
           if (!sway && k === 1) art(o, o.live, x, y, size); else { ctx.save(); ctx.translate(snapX(x), snapY(y)); ctx.transform(1, 0, sway, 1, 0, 0); art(o, o.live, 0, 0, size * (2 - k) ** .4, size * k, [o.size, o.size], false); ctx.restore(); }
-          grassFoot(foot, o.art, Math.floor(o.y) * CW + Math.floor(o.x), o.id, o.mark);
-          if (o.live === 11 && !o.mark && !reduced) { const b = .5 + Math.sin(tNow * 2 + o.x) * .5; ctx.globalAlpha = .18 + b * .2; ctx.fillStyle = '#b8ffe6'; ctx.beginPath(); ctx.arc(x, y - size * .55, size * .32, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+          grassFoot(foot, o.art, Math.floor(o.y) * CW + Math.floor(o.x), o.id, !!o.place);
+          if (o.live === 11 && !o.place && !reduced) { const b = .5 + Math.sin(tNow * 2 + o.x) * .5; ctx.globalAlpha = .18 + b * .2; ctx.fillStyle = '#b8ffe6'; ctx.beginPath(); ctx.arc(x, y - size * .55, size * .32, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
         }
       } else if (it.t) {
         const t = it.t, g = Math.min(1, (s.age - t.born) / 9), x = sx(t.x * CELL), y = sy(t.y * CELL), size = (10 + 28 * g) * SHRINK * z;

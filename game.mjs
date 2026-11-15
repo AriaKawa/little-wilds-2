@@ -1,9 +1,9 @@
-import { makeWorld, ZONES, LANDS, REGIONS, CN, CW, CH, CELL, hash } from './world.mjs?v=34';
-import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=34';
-import { createLand } from './land.mjs?v=34';
-import { createRenderer, GRASS_STYLES } from './render.mjs?v=34';
-import { createAudio } from './audio.mjs?v=34';
-import { spiritFace, useDeerSheet } from './critters.mjs?v=34';
+import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=35';
+import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=35';
+import { createLand } from './land.mjs?v=35';
+import { createRenderer, GRASS_STYLES } from './render.mjs?v=35';
+import { createAudio } from './audio.mjs?v=35';
+import { spiritFace, useDeerSheet } from './critters.mjs?v=35';
 
 const KEY = 'little-wilds-2-v2', CARDS_KEY = 'little-wilds-2-postcards', SOUND_KEY = 'little-wilds-2-muted', VOLUME_KEY = 'little-wilds-2-volume', GRASS_KEY = 'little-wilds-2-grass', MUSIC_KEY = 'little-wilds-2-music';
 const $ = id => document.getElementById(id);
@@ -28,7 +28,7 @@ function toast(text, soft = false) {
   $('toast').textContent = text; $('toast').classList.add('show'); clearTimeout(toastTimer); toastUntil = performance.now() + 3200;
   toastTimer = setTimeout(() => { $('toast').classList.remove('show'); if (softToasts.length) setTimeout(() => toast(softToasts.shift(), true), 350); }, 3200);
 }
-let titleOn = false, tour = 0, tourAt = 0, held = null;
+let titleOn = false, tour = 0, tourAt = 0, held = [];
 // A new journal entry: a little gift of seeds, and a toast. Finishing a page raises all land income for good.
 function jot(key) {
   if (!s || preview || !journalLabel(key) || s.journal?.[key]) return;
@@ -58,7 +58,8 @@ function hoverCursor(x, y) {
   canvas.style.cursor = view.hitPet(x, y) || view.hitWild(x, y) || view.hitFolk(x, y) || view.hitSign(x, y) >= 0 ? 'pointer' : view.hitSpirit(s, x, y) ? 'grab' : '';
 }
 // While the title menu is up, big moments wait and play once you are back on the land.
-function banner(title, sub = '', ms = 5200) { if (titleOn) { held = [title, sub, ms]; return; } $('banner-title').textContent = title; $('banner-sub').textContent = sub; $('banner').classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => $('banner').classList.remove('show'), ms); }
+// While the title is up, big moments queue (the first few, in order) and play one after another once you are back.
+function banner(title, sub = '', ms = 5200) { if (titleOn) { if (held.length < 3) held.push([title, sub, ms]); return; } $('banner-title').textContent = title; $('banner-sub').textContent = sub; $('banner').classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => $('banner').classList.remove('show'), ms); }
 function save() { if (!s || preview) return; try { localStorage.setItem(KEY, encode(s)); } catch { toast('Saving is unavailable in this browser.'); } }
 const loading = text => { $('loading').querySelector('span').textContent = text; return nextFrame(); };
 
@@ -182,7 +183,7 @@ function hideTitle() {
   if (!titleOn) return;
   titleOn = false; document.body.classList.remove('title'); $('title').hidden = true; wake();
   currentZone = firstOpen(); view.focusZone(currentZone); gliding = performance.now() + 1800;
-  if (held) { const [a, b, c] = held; held = null; banner(a, b, c); } else if (!s.touched) banner('Little Wilds', 'Nothing has grown here in a long time.', 4500);
+  if (held.length) { let at = 0; for (const [a, b, c] of held) { setTimeout(() => banner(a, b, c), at); at += c + 300; } held = []; } else if (!s.touched) banner('Little Wilds', 'Nothing has grown here in a long time.', 4500);
   canvas.focus({ preventScroll: true });
 }
 // The camera wanders the glades you have woken, a little wider than play, lingering on each.
@@ -425,9 +426,9 @@ addEventListener('pagehide', save);
 async function main() {
   try {
     await nextFrame();
-    const [worldImg, spirits, landmarks, pets, flyers, deer, fish, fawn, folk, raincloud, places, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/landmarks.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=34').catch(() => null), load('assets/fish.png?v=34').catch(() => null), load('assets/fawn.png?v=34').catch(() => null), load('assets/folk.png?v=34').catch(() => null), load('assets/raincloud.png?v=34').catch(() => null), load('assets/places.png?v=34').catch(() => null), ...LANDS.slice(1).map((_, n) => load(`assets/biome-${n + 1}.png?v=34`).catch(() => null))]);
+    const [worldImg, spirits, pets, flyers, deer, fish, fawn, folk, raincloud, places, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=35').catch(() => null), load('assets/fish.png?v=35').catch(() => null), load('assets/fawn.png?v=35').catch(() => null), load('assets/folk.png?v=35').catch(() => null), load('assets/raincloud.png?v=35').catch(() => null), load('assets/places.png?v=35').catch(() => null), ...LANDS.slice(1).map((_, n) => lookOf(n + 1) === n + 1 ? load(`assets/biome-${n + 1}.png?v=35`).catch(() => null) : null)]);
     if (deer) useDeerSheet(deer, fawn);
-    images = { world: worldImg, spirits, landmarks, pets, flyers, fish, folk, raincloud, places, biomes: [null, ...biomes] };
+    images = { world: worldImg, spirits, pets, flyers, fish, folk, raincloud, places, biomes: [null, ...biomes] };
     await buildWorld();
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch { raw = null; }

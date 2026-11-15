@@ -1,7 +1,7 @@
 // Rules of restoration. No DOM: runs in the game, offline catch-up and the pacing test alike.
 // One field covers the whole continent; glades are bought outward from the middle, and one army of spirits works all of it.
-import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=34';
-import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=34';
+import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=35';
+import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=35';
 // The ground map spirits and animals walk by, rebuilt when a different set of planted trees is in play.
 export function navOf(s, w) { if (!w.nav || w.navTrees !== s.trees) { buildNav(w); for (const t of s.trees) markTree(w, t); w.navTrees = s.trees; } return w.nav; }
 
@@ -363,6 +363,7 @@ export function tick(s, w, dt, ev = [], slice = 0, of = 1) {
   initObjects(s, w);
   s.age += dt;
   s.seeds += income(s) * dt;
+  if (!Number.isFinite(s.seeds)) s.seeds = 0; // never let one bad sum poison the save
   if (!carries.has(s)) carries.set(s, { v: Math.random() });
   drink(s, w, dt);
   navOf(s, w);
@@ -488,7 +489,10 @@ function fromLands(o, w) {
 }
 export function decode(text, w) {
   const o = JSON.parse(text);
-  if (![3, 4, 5].includes(o?.v) || typeof o.h !== 'string' || !Array.isArray(o.spirits) || !Array.isArray(o.zones) || !Number.isFinite(o.seeds)) throw Error('Not a Little Wilds 2 save.');
+  if (![3, 4, 5].includes(o?.v) || typeof o.h !== 'string' || !Array.isArray(o.spirits) || !Array.isArray(o.zones)) throw Error('Not a Little Wilds 2 save.');
+  // A bad number in an otherwise good save (a seed count that went wrong) costs only that number, never the continent.
+  if (!Number.isFinite(o.seeds) || o.seeds < 0) o.seeds = 0;
+  if (!Number.isFinite(o.age)) o.age = 0;
   if (o.v === 3) { // Before the continent, "Travel on" discarded each finished land. Those count as restored.
     const L = Math.min(o.land || 0, LANDS.length - 1), full = () => Array.from({ length: 9 }, () => ({ open: true, done: true, water: 1, bloomed: true }));
     o.v = 4; o.land = L; o.level = L; o.atlas = {};
