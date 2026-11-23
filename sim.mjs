@@ -1,11 +1,12 @@
 // Rules of restoration. No DOM: runs in the game, offline catch-up and the pacing test alike.
 // One field covers the whole continent; glades are bought outward from the middle, and one army of spirits works all of it.
-import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=35';
-import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=35';
+import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=36';
+import { FISH } from './fishing.mjs?v=36';
+import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=36';
 // The ground map spirits and animals walk by, rebuilt when a different set of planted trees is in play.
 export function navOf(s, w) { if (!w.nav || w.navTrees !== s.trees) { buildNav(w); for (const t of s.trees) markTree(w, t); w.navTrees = s.trees; } return w.nav; }
 
-const WORLD_VERSION = 12, FIELD_VERSION = 5; // objects / the shape of the glades
+const WORLD_VERSION = 13, FIELD_VERSION = 5; // objects / the shape of the glades
 export const SPIRIT_CAP = 60;
 // How fast a pond fills (share of a full pond is .3): on its own, in a shower, and per Rainwisp raining into it.
 export const POND_TRICKLE = .00025, POND_RAIN = .0012, POND_WISP = .005;
@@ -32,11 +33,12 @@ export const landTouched = (s, l) => s.levels[l] !== undefined;
 export const upgradeMax = (s, u) => u.max + (u.more || 0) * mapsDone(s);
 // Restored lands keep earning on their own.
 export const landIncome = (s, l) => landDone(s, l) ? 40 * Math.pow(1.6, s.levels[l] || 0) : 0;
-// The farm and the fishing pier earn seeds of their own once restored.
-export const PLACE_INCOME = { farm: 12, pier: 8 };
+// The farm, the fishing pier and the demon lord's throne earn seeds of their own once restored.
+export const PLACE_INCOME = { farm: 12, pier: 8, throne: 20 };
 let places = [];
 const placeIncome = s => places.reduce((a, [id, kind]) => a + (s.objHp?.[id] === 0 ? PLACE_INCOME[kind] || 0 : 0), 0);
-export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s);
+// The demon lord's blessings (s.boon, from his quests) add to it all.
+export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s) * (1 + (s.boon || 0));
 
 // The field journal: creatures met, lands brought back and small moments. Each new entry gives a little gift of
 // seeds; each finished page adds 10% to everything the restored lands earn, for good.
@@ -48,6 +50,7 @@ export const JOURNAL = [
   { name: 'Lands', entries: [...REGIONS.map(R => ['land:' + R.name, `${R.name} restored`]), ...REGIONS.map(R => ['bloom:' + R.name, `${R.name} flourishing`])] },
   { name: 'Moments', entries: [['rainwisp', 'A riverbed filled'], ['rain', 'A passing shower'], ['snow', 'Snowfall'], ['fireflies', 'Fireflies at night'],
     ['spring', 'Spring blossom'], ['summer', 'High summer'], ['autumn', 'Autumn leaves'], ['winter', 'A winter frost'], ['favour', 'A favour for a villager'], ['pat', 'A pat for every kind of animal']] },
+  { name: 'Catches', entries: FISH.map(f => ['fish:' + f.id, f.name]) },
 ];
 const JOURNAL_KEYS = new Map(JOURNAL.flatMap(p => p.entries.map(([k, label]) => [k, label])));
 export const journalLabel = key => JOURNAL_KEYS.get(key);
@@ -500,11 +503,17 @@ export function decode(text, w) {
   }
   if (o.v === 4) { if (o.zones.length !== 9) throw Error('Not a Little Wilds 2 save.'); return dryUnlessWisp(fromLands(o, w)); }
   let raw = atob(o.h);
-  const oldCN = CW * (CH / 4 * 3);
-  if (o.zones.length === 81 && raw.length === oldCN) { // the map before the island: same cells, one row fewer
-    raw = raw + '\0'.repeat(CN - oldCN);
-    o.zones = [...o.zones, ...freshZones().slice(81)];
+  const rowCN = CW * LCH;
+  if (o.zones.length === 81 && raw.length === rowCN * 3) { // the map before the south island: one row fewer at the bottom
+    raw = raw + '\0'.repeat(rowCN);
+    o.zones = [...o.zones, ...freshZones().slice(81, 99)];
     o.wv = 0; // lay every object out afresh
+  }
+  if (o.zones.length === 99 && raw.length === rowCN * 4) { // the map before Demonreach: a row of sea is added on top
+    raw = '\0'.repeat(rowCN) + raw;
+    o.zones = [...o.zones, ...freshZones().slice(99)];
+    for (const q of [...o.spirits, ...(o.trees || [])]) { q.y += LCH; if ('ty' in q) { q.tx = -1; q.ty = -1; } }
+    o.wv = 0;
   }
   if (o.zones.length !== ZONES.length) throw Error('Not a Little Wilds 2 save.');
   if (raw.length !== CN) throw Error('Bad land data.');

@@ -2,7 +2,7 @@
 // Texels are the land's pixels; cells are the 4x4 texel blocks that hold restoration.
 export const LW = 960, LH = 640, CELL = 4, LCW = LW / CELL, LCH = LH / CELL, LCN = LCW * LCH;
 // The whole continent: the nine lands side by side.
-export const COLS = 3, ROWS = 4, TW = LW * COLS, TH = LH * ROWS, CW = TW / CELL, CH = TH / CELL, CN = CW * CH;
+export const COLS = 3, ROWS = 5, TW = LW * COLS, TH = LH * ROWS, CW = TW / CELL, CH = TH / CELL, CN = CW * CH;
 
 const grid = [
   ['Hearthfield', 0, 2, -1], ['Clover Downs', 1, 2, 0], ['Willow Draw', 0, 1, 0],
@@ -61,11 +61,13 @@ export function coastInset(gx, gy) { // Roughly how many texels inland this poin
 }
 export const SEA = 1, BEACH = 2, ROCK = 3, PATH = 4;
 export let edgeDepth = 0;
-// The island in the south: one land, Sporewood to the west and Coral Reach to the east, across a channel of sea.
-export const ISLAND = { x: LW * 2, y: LH * 3 + 300, rx: 640, ry: 245 };
+// The grid: the top row is sea holding the demon isle (Demonreach), the next three rows are the continent (TOP is
+// where it starts), and the bottom row is sea holding the south island, Sporewood to the west and Coral Reach east.
+export const TOP = LH;
+export const ISLAND = { x: LW * 2, y: LH * 4 + 300, rx: 640, ry: 245 }, DEMON_ISLE = { x: LW, y: 330, rx: 770, ry: 262 };
 export function terrain(col, row, x, y, pad = 0) {
   const gx = col * LW + x, gy = row * LH + y;
-  const inset = row >= 3 ? islandInset(gx, gy) : coastInset(gx, gy);
+  const inset = row === 0 ? islandInset(gx, gy, DEMON_ISLE, 89) : row >= 4 ? islandInset(gx, gy, ISLAND, 85) : coastInset(gx, gy - TOP);
   if (inset < 100) {
     const shore = 44 + (fbm(gx / 85, gy / 85, 71) - .5) * 70 + (fbm(gx / 24, gy / 24, 72) - .5) * 16;
     if (inset < shore - pad) { edgeDepth = Math.min(1, (shore - inset) / 40); return SEA; }
@@ -73,14 +75,14 @@ export function terrain(col, row, x, y, pad = 0) {
   }
   return 0; // Open land: no rocky outcrops anywhere.
 }
-function islandInset(gx, gy) {
-  const u = (gx - ISLAND.x) / ISLAND.rx, v = (gy - ISLAND.y) / ISLAND.ry, a = Math.atan2(v, u);
-  return (1 + .06 * Math.sin(3 * a + 1) + .05 * Math.sin(5 * a + 2.2) - Math.hypot(u, v)) * 260 + (fbm(gx / 120, gy / 120, 85) - .5) * 60;
+function islandInset(gx, gy, I, seed) {
+  const u = (gx - I.x) / I.rx, v = (gy - I.y) / I.ry, a = Math.atan2(v, u);
+  return (1 + .06 * Math.sin(3 * a + 1 + seed) + .05 * Math.sin(5 * a + 2.2) - Math.hypot(u, v)) * 260 + (fbm(gx / 120, gy / 120, seed) - .5) * 60;
 }
 
 // Each map dresses the same glade tree in its own names, opening on the side nearest the heartland.
 function dressZones(mapId) {
-  const map = LANDS[mapId], flipX = map.col === 0, flipY = map.row === 2;
+  const map = LANDS[mapId], flipX = map.col === 0, flipY = map.row === 3;
   for (const z of GLADES) { const c = flipX ? 2 - z.col : z.col, r = flipY ? 2 - z.row : z.row; z.name = map.glades[z.id]; z.px = 160 + c * 320; z.py = 110 + r * 210; }
   if (mapId) fitGlades(map);
 }
@@ -255,6 +257,8 @@ const LOOK = {
   mist: { dead: [104, 104, 92], crack: [62, 64, 56], soil: [52, 48, 40], grass: [72, 130, 96], lush: [96, 156, 118], water: [78, 142, 150], flowers: ['#e8fff0', '#b8f0d0', '#d8b8ff', '#fff2a8', '#88d8c8'], mist: [196, 210, 200] },
   coral: { dead: [150, 134, 136], crack: [98, 84, 92], soil: [98, 66, 80], grass: [206, 122, 146], lush: [236, 140, 160], water: [64, 196, 206], flowers: ['#fff0f4', '#ff7fa8', '#ffb09a', '#a0f0e0', '#ffe28a'], mist: [234, 212, 220], sand: [250, 214, 200] },
   spore: { dead: [106, 92, 104], crack: [64, 52, 66], soil: [60, 44, 58], grass: [116, 98, 166], lush: [132, 110, 180], water: [92, 130, 190], flowers: ['#f0e0ff', '#c890ff', '#ff90c8', '#90f0d0', '#ffd890'], mist: [204, 192, 214] },
+  // Demonreach: charcoal and plum earth, crimson grass, magenta in bloom.
+  demon: { dead: [78, 66, 74], crack: [40, 30, 40], soil: [58, 34, 44], grass: [124, 44, 58], lush: [154, 52, 70], water: [150, 70, 110], flowers: ['#ff6a3a', '#ffb347', '#c070ff', '#ff4a6a', '#ffe08a'], mist: [110, 80, 96] },
   glimmer: { dead: [116, 116, 134], crack: [68, 68, 90], soil: [62, 56, 86], grass: [96, 158, 200], lush: [120, 190, 220], water: [110, 150, 240], flowers: ['#ffffff', '#b8e8ff', '#d0b0ff', '#90f0e0', '#ffc0f0'], mist: [212, 214, 236], peak: [214, 196, 255] },
 };
 // The map is a grid of land-sized cells, three across and four down. A region can cover more than one cell:
@@ -262,17 +266,19 @@ const LOOK = {
 // whose western half is Sporewood and eastern half Coral Reach. Ids 0 to 8 keep the cells older saves knew;
 // `look` names the cell whose art and colours a cell shares (its region's first cell).
 export const LANDS = [
-  { name: 'Hollow Vale', col: 1, row: 1, ...LOOK.hollow, glades: ['Hearthfield', 'Clover Downs', 'Willow Draw', 'Pebble Hollow', 'Honey Meadow', 'Dry Creek Bend', 'Birch Knoll', 'Daisy Vale', "Mother's Rise"] },
-  { name: 'Ember Basin', col: 2, row: 1, ...LOOK.ember, native: { label: 'A cinder fox', size: 24, speed: 9 }, glades: ['Ashfall Gate', 'Kiln Hollow', 'Smoulder Run', 'Red Terrace', 'Coalbloom', 'Charcoal Bend', 'Lantern Scarp', 'Sparkfield', 'The Warm Heart'] },
-  { name: 'Frostmere', col: 1, row: 0, ...LOOK.frost, native: { label: 'A snow lynx', size: 26, speed: 8 }, glades: ['Thaw Gate', 'Rimewood', 'Icicle Draw', 'Hushed Fell', 'Silverbrook', 'Glass Bend', 'Pine Knoll', 'Winterbell', 'The First Melt'] },
-  { name: 'Sunfall Coast', col: 1, row: 2, ...LOOK.sun, village: true, native: { label: 'A sun tortoise', size: 20, speed: 4 }, glades: ['Tidegate', 'Palm Hollow', 'Saltgrass', 'Shell Rise', 'Gull Rest', 'Driftwood Bend', 'Lighthouse Knoll', 'Hibiscus Vale', 'Sunfall Point'] },
-  { name: 'Mistfen', col: 0, row: 1, ...LOOK.mist, native: { label: 'A reed otter', size: 20, speed: 8 }, glades: ['Reedgate', 'Sedge Hollow', 'Lily Draw', 'Heron Rest', 'Willow Sink', 'Peat Bend', 'Lantern Bog', 'Cattail Vale', 'The Still Eye'] },
-  { name: 'Frostmere', col: 2, row: 0, look: 2, ...LOOK.frost, native: { label: 'A snow lynx', size: 26, speed: 8 }, glades: ['Hoarfrost Gate', 'Drift Hollow', 'Sleet Draw', 'Bellfrost Rise', 'Snowberry', 'Cold Spring Bend', 'Fir Knoll', 'Starfrost Vale', 'The Long Winter'] },
-  { name: 'Ember Basin', col: 2, row: 2, look: 1, ...LOOK.ember, native: { label: 'A cinder fox', size: 24, speed: 9 }, glades: ['Cinder Gate', 'Ashen Hollow', 'Ember Draw', 'Kindle Rise', 'Glowfield', 'Smoke Bend', 'Hearth Knoll', 'Saffron Vale', 'The Last Ember'] },
-  { name: 'Mistfen', col: 0, row: 2, look: 4, ...LOOK.mist, native: { label: 'A reed otter', size: 20, speed: 8 }, glades: ['Fogmouth', 'Bog Hollow', 'Rush Draw', 'Mire Rise', 'Frogspawn', 'Drizzle Bend', 'Moth Knoll', 'Marsh Vale', 'The Drowned Lantern'] },
-  { name: 'Glimmerdeep', col: 0, row: 0, ...LOOK.glimmer, native: { label: 'A crystal hedgehog', size: 16, speed: 6 }, glades: ['Shardgate', 'Quartz Hollow', 'Prism Draw', 'Echo Rise', 'Geode Meadow', 'Facet Bend', 'Amethyst Knoll', 'Glint Vale', 'The Deep Light'] },
-  { name: 'Sporewood', col: 1, row: 3, ...LOOK.spore, native: { label: 'A spore toadling', size: 17, speed: 6 }, glades: ['Capgate', 'Gill Hollow', 'Puffball Draw', 'Mycel Rise', 'Glowcap', 'Rootrot Bend', 'Moss Knoll', 'Dapple Vale', 'The Great Cap'] },
-  { name: 'Coral Reach', col: 2, row: 3, ...LOOK.coral, native: { label: 'A coral crab', size: 15, speed: 7 }, glades: ['Pearlgate', 'Anemone Hollow', 'Brine Draw', 'Conch Rise', 'Rosereef', 'Urchin Bend', 'Foam Knoll', 'Starfish Vale', 'The Pink Tide'] },
+  { name: 'Hollow Vale', col: 1, row: 2, ...LOOK.hollow, glades: ['Hearthfield', 'Clover Downs', 'Willow Draw', 'Pebble Hollow', 'Honey Meadow', 'Dry Creek Bend', 'Birch Knoll', 'Daisy Vale', "Mother's Rise"] },
+  { name: 'Ember Basin', col: 2, row: 2, ...LOOK.ember, native: { label: 'A cinder fox', size: 24, speed: 9 }, glades: ['Ashfall Gate', 'Kiln Hollow', 'Smoulder Run', 'Red Terrace', 'Coalbloom', 'Charcoal Bend', 'Lantern Scarp', 'Sparkfield', 'The Warm Heart'] },
+  { name: 'Frostmere', col: 1, row: 1, ...LOOK.frost, native: { label: 'A snow lynx', size: 26, speed: 8 }, glades: ['Thaw Gate', 'Rimewood', 'Icicle Draw', 'Hushed Fell', 'Silverbrook', 'Glass Bend', 'Pine Knoll', 'Winterbell', 'The First Melt'] },
+  { name: 'Sunfall Coast', col: 1, row: 3, ...LOOK.sun, village: true, native: { label: 'A sun tortoise', size: 20, speed: 4 }, glades: ['Tidegate', 'Palm Hollow', 'Saltgrass', 'Shell Rise', 'Gull Rest', 'Driftwood Bend', 'Lighthouse Knoll', 'Hibiscus Vale', 'Sunfall Point'] },
+  { name: 'Mistfen', col: 0, row: 2, ...LOOK.mist, native: { label: 'A reed otter', size: 20, speed: 8 }, glades: ['Reedgate', 'Sedge Hollow', 'Lily Draw', 'Heron Rest', 'Willow Sink', 'Peat Bend', 'Lantern Bog', 'Cattail Vale', 'The Still Eye'] },
+  { name: 'Frostmere', col: 2, row: 1, look: 2, ...LOOK.frost, native: { label: 'A snow lynx', size: 26, speed: 8 }, glades: ['Hoarfrost Gate', 'Drift Hollow', 'Sleet Draw', 'Bellfrost Rise', 'Snowberry', 'Cold Spring Bend', 'Fir Knoll', 'Starfrost Vale', 'The Long Winter'] },
+  { name: 'Ember Basin', col: 2, row: 3, look: 1, ...LOOK.ember, native: { label: 'A cinder fox', size: 24, speed: 9 }, glades: ['Cinder Gate', 'Ashen Hollow', 'Ember Draw', 'Kindle Rise', 'Glowfield', 'Smoke Bend', 'Hearth Knoll', 'Saffron Vale', 'The Last Ember'] },
+  { name: 'Mistfen', col: 0, row: 3, look: 4, ...LOOK.mist, native: { label: 'A reed otter', size: 20, speed: 8 }, glades: ['Fogmouth', 'Bog Hollow', 'Rush Draw', 'Mire Rise', 'Frogspawn', 'Drizzle Bend', 'Moth Knoll', 'Marsh Vale', 'The Drowned Lantern'] },
+  { name: 'Glimmerdeep', col: 0, row: 1, ...LOOK.glimmer, native: { label: 'A crystal hedgehog', size: 16, speed: 6 }, glades: ['Shardgate', 'Quartz Hollow', 'Prism Draw', 'Echo Rise', 'Geode Meadow', 'Facet Bend', 'Amethyst Knoll', 'Glint Vale', 'The Deep Light'] },
+  { name: 'Sporewood', col: 1, row: 4, ...LOOK.spore, native: { label: 'A spore toadling', size: 17, speed: 6 }, glades: ['Capgate', 'Gill Hollow', 'Puffball Draw', 'Mycel Rise', 'Glowcap', 'Rootrot Bend', 'Moss Knoll', 'Dapple Vale', 'The Great Cap'] },
+  { name: 'Coral Reach', col: 2, row: 4, ...LOOK.coral, native: { label: 'A coral crab', size: 15, speed: 7 }, glades: ['Pearlgate', 'Anemone Hollow', 'Brine Draw', 'Conch Rise', 'Rosereef', 'Urchin Bend', 'Foam Knoll', 'Starfish Vale', 'The Pink Tide'] },
+  { name: 'Demonreach', col: 0, row: 0, ...LOOK.demon, native: { label: 'A little imp', size: 15, speed: 7 }, glades: ['Brimgate', 'Cinder Hollow', 'Imp Warren', 'Sulphur Rise', 'Ashveil', 'Horned Bend', 'Ember Knoll', 'Gloomvale', 'The Throne Steps'] },
+  { name: 'Demonreach', col: 1, row: 0, look: 11, ...LOOK.demon, native: { label: 'A little imp', size: 15, speed: 7 }, glades: ['Hornfall', 'Smoulder Moor', 'Pitchfork Draw', 'Brimstone Rise', 'Wickfield', 'Charred Bend', 'Gargoyle Knoll', 'Duskmire', 'The Black Crown'] },
 ];
 // The cell whose art and colours each cell uses.
 export const lookOf = l => LANDS[l]?.look ?? l;
@@ -301,7 +307,7 @@ function course(a, b, w0, w1, k, sway, extra = 0, wave = 85) {
   return out;
 }
 function planWater() {
-  const lake = { x: LW + 480, y: LH + 320 }, rx = LAKE.r * .86, ry = rx / LAKE.squash;
+  const lake = { x: LW + 480, y: TOP + LH + 320 }, rx = LAKE.r * .86, ry = rx / LAKE.squash;
   const into = p => { const a = Math.atan2(p.y - lake.y, p.x - lake.x); return { x: lake.x + Math.cos(a) * rx * .6, y: lake.y + Math.sin(a) * ry * .6 }; };
   // Like a real watershed: streams rise at springs in the uplands round the edge of the heartland and run down
   // in long, easy meanders. The stream from Glimmerdeep joins the one from Frostmere before they reach the lake; the
@@ -309,28 +315,47 @@ function planWater() {
   // joins it on the way, so the water branches like a real river system rather than meeting at one point.
   const rim = p => { const a = Math.atan2(p.y - lake.y, p.x - lake.x); return { x: lake.x + Math.cos(a) * rx * .82, y: lake.y + Math.sin(a) * ry * .82 }; };
   const spring = (x, y) => inland(x, y, 90), seep = path => { for (let d = 0; d < 8 && d < path.length; d++) path[d][2] += (8 - d) * .1; return path; };
-  const frostS = spring(LW * 1.8, LH * .45), glimS = spring(LW * .55, LH * .55), mistS = spring(LW * .4, LH * 1.5), emberS = spring(LW * 2.55, LH * 1.18);
+  const frostS = spring(LW * 1.8, TOP + LH * .45), glimS = spring(LW * .55, TOP + LH * .55), mistS = spring(LW * .4, TOP + LH * 1.5), emberS = spring(LW * 2.55, TOP + LH * 1.18);
   const frost = seep(course(frostS, rim(frostS), 1.8, 4, 1, 300, 0, 170));
   const meet = frost[Math.floor(frost.length * .62)], glim = seep(course(glimS, { x: meet[0], y: meet[1] }, 1.6, 2.8, 2, 260, 0, 150));
   for (let k = Math.floor(frost.length * .62); k < frost.length; k++) frost[k][2] += .9; // the stream runs fuller below where they meet
   const ember = seep(course(emberS, rim(emberS), 1.8, 4, 4, 300, 0, 170));
   WATER.rivers = [frost, glim, ember];
   WATER.springs = [frostS, glimS, mistS, emberS];
-  let my = lake.y + ry; while (my < LH * 3 && onLand(lake.x, my + 30)) my += 4;
+  let my = lake.y + ry; while (my < TOP + LH * 3 && onLand(lake.x, my + 30)) my += 4;
   const out = course({ x: lake.x, y: lake.y + ry * .82 }, { x: lake.x, y: my + 30 }, 4.4, 6.2, 9, 300, 40, 190);
   out.forEach((p, d) => { const t = d / out.length; if (t > .82) p[2] += (t - .82) / .18 * 5; }); // a little delta at the sea
   WATER.rivers.push(out);
   const join = out[Math.floor(out.length * .4)], mist = seep(course(mistS, { x: join[0], y: join[1] }, 1.8, 3.8, 3, 280, 0, 170));
   for (let k = Math.floor(out.length * .4); k < out.length; k++) out[k][2] += .8; // fuller below the meeting
   WATER.rivers.push(mist);
-  WATER.ponds = [[LW * .5, LH * 2.3, 10], [LW * 2.5, LH * 2.25, 11], [LW * 1.62, LH * 3 + 290, 10]].map(([x, y, r]) => ({ ...inland(x, y, 50), r }));
-  // The farm west of the river in Sunfall Coast.
-  WATER.farm = inland(LW * 1.3, LH * 2.22, 70);
+  // Rivers of their own to the sea: each rises inland and runs out along its heading to the first open water,
+  // in Glimmerdeep, Frostmere, Ember Basin, Mistfen, Sunfall Coast and on both islands.
+  const sea = (x, y) => { const col = Math.floor(x / LW), row = Math.floor(y / LH); return col >= 0 && row >= 0 && col < COLS && row < ROWS && terrain(col, row, x - col * LW, y - row * LH) === SEA; };
+  const toSea = (x, y, angle, k, w = 3.4) => {
+    const s = spring(x, y), dx = Math.cos(angle), dy = Math.sin(angle); let r = 20;
+    while (r < 1400 && !sea(s.x + dx * r, s.y + dy * r)) r += 6;
+    if (r >= 1400) return;
+    const path = seep(course(s, { x: s.x + dx * (r + 24), y: s.y + dy * (r + 24) }, 1.5, w, k, Math.min(150, r * .22), 30, 120));
+    path.forEach((p, d) => { const q = d / path.length; if (q > .85) p[2] += (q - .85) / .15 * 2.2; }); // a widening mouth
+    WATER.rivers.push(path); WATER.springs.push(s);
+  };
+  toSea(LW * .55, TOP + LH * 1.05, 3.05, 21);                              // Glimmerdeep, west to the open sea
+  toSea(LW * 2.05, TOP + LH * .55, -.75, 22);                              // Frostmere, north-east through the snow
+  toSea(LW * 2.25, TOP + LH * 1.75, .55, 23, 3.8);                         // Ember Basin, south-east
+  toSea(LW * 1.02, TOP + LH * 2.5, 2.75, 24);                               // Mistfen, out through the fens to the south-west
+  toSea(LW * 1.78, TOP + LH * 2.3, 1.45, 25, 3);                           // Sunfall Coast, a second mouth east of the great one
+  toSea(LW * 1.42, LH * .42, -.1, 26, 3); toSea(LW * .62, LH * .5, 3.05, 27, 3); // Demonreach, east and west
+  toSea(LW * 1.95, LH * 4 + 300, .2, 28, 3);                                // the south island
+  WATER.ponds = [[LW * .5, TOP + LH * 2.3, 10], [LW * 2.5, TOP + LH * 2.25, 11], [LW * 1.62, LH * 4 + 290, 10]].map(([x, y, r]) => ({ ...inland(x, y, 50), r }));
+  // The farm west of the river in Sunfall Coast; the demon lord's throne in the heart of Demonreach.
+  WATER.farm = inland(LW * 1.3, TOP + LH * 2.22, 70);
+  WATER.throne = inland(LW * 1.15, LH * .5, 70);
   // The fishing pier: on the coast nearest the farm (well clear of the river mouth), it starts on dry land and
   // runs straight out to sea, square to the shore. Its direction is the way from the land around it to the sea.
-  const F = WATER.farm, sea = (x, y) => { const col = Math.floor(x / LW), row = Math.floor(y / LH); return col >= 0 && row >= 0 && col < COLS && row < ROWS && terrain(col, row, x - col * LW, y - row * LH) === SEA; };
+  const F = WATER.farm;
   let S = null, sd = Infinity;
-  for (let y = F.y; y < LH * 3; y += 4) for (let x = F.x - 320; x <= F.x + 320; x += 4) { const d = Math.hypot(x - F.x, y - F.y); if (d < sd && Math.abs(x - lake.x) > 110 && sea(x, y)) { sd = d; S = { x, y }; } }
+  for (let y = F.y; y < TOP + LH * 3; y += 4) for (let x = F.x - 320; x <= F.x + 320; x += 4) { const d = Math.hypot(x - F.x, y - F.y); if (d < sd && Math.abs(x - lake.x) > 110 && sea(x, y)) { sd = d; S = { x, y }; } }
   let ax = 0, ay = 0; for (let a = 0; a < 6.283; a += .2) for (const r of [18, 34]) { const x = S.x + Math.cos(a) * r, y = S.y + Math.sin(a) * r, k = sea(x, y) ? 1 : -1; ax += Math.cos(a) * k; ay += Math.sin(a) * k; }
   const al = Math.hypot(ax, ay) || 1, dx = ax / al, dy = ay / al;
   let back = 0; while (back < 200 && !onLand(S.x - dx * back, S.y - dy * back)) back += 2; // the first dry ground behind the shore
@@ -418,16 +443,16 @@ export async function makeWorld(progress = async () => {}) {
       const gx = x >> 2, tx = (x & 3) / 4, k = gy * gw + gx, d = hash(x, y, 617) - .5;
       const dx = (wxG[k] * (1 - tx) + wxG[k + 1] * tx) * (1 - ty) + (wxG[k + gw] * (1 - tx) + wxG[k + gw + 1] * tx) * ty, dy = (wyG[k] * (1 - tx) + wyG[k + 1] * tx) * (1 - ty) + (wyG[k + gw] * (1 - tx) + wyG[k + gw + 1] * tx) * ty;
       const by = y + dy - d * 44; // the island across the channel never borrows the mainland's colours, or the reverse
-      biome[i] = lookOf(landAtTexel(x + dx + d * 44, y >= LH * 3 ? Math.max(LH * 3, by) : Math.min(LH * 3 - 1, by)));
+      biome[i] = lookOf(landAtTexel(x + dx + d * 44, y < TOP ? Math.min(TOP - 1, by) : y >= TOP + LH * 3 ? Math.max(TOP + LH * 3, by) : Math.max(TOP, Math.min(TOP + LH * 3 - 1, by))));
     }
   }
   // A last look over the whole continent: nothing stands in water, on a road or crop row, on rock or sand, or on
   // top of something else. A misplaced tree or stone shuffles a little way over, or is left out.
   // The farm and the fishing pier are places that earn seeds once restored. The farm is ChatGPT art (assets/places.png);
   // the pier is drawn plank by plank along its line, so it always starts on land and points out to sea.
-  { const F = WATER.farm, D = { x: WATER.pier.x0, y: WATER.pier.y0 }, keep = objects.filter(o => Math.hypot(o.x * CELL - F.x, o.y * CELL - F.y) > 70 && Math.hypot(o.x * CELL - D.x, o.y * CELL - D.y) > 36 && WATER.springs.every(q => Math.hypot(o.x * CELL - q.x, o.y * CELL - q.y) > 34));
+  { const F = WATER.farm, D = { x: WATER.pier.x0, y: WATER.pier.y0 }, keep = objects.filter(o => Math.hypot(o.x * CELL - F.x, o.y * CELL - F.y) > 70 && Math.hypot(o.x * CELL - D.x, o.y * CELL - D.y) > 36 && WATER.springs.every(q => Math.hypot(o.x * CELL - q.x, o.y * CELL - q.y) > 34) && Math.hypot(o.x * CELL - WATER.throne.x, o.y * CELL - WATER.throne.y) > 64);
     objects.length = 0; objects.push(...keep);
-    for (const [P, place, dead, size] of [[F, 'farm', 0, 66], [D, 'pier', 2, 40], ...WATER.springs.map(q => [{ x: q.x, y: q.y + 5 }, 'spring', 4, 30])]) objects.push({ id: objects.length, zone: 0, dead, live: dead + 1, x: P.x / CELL, y: P.y / CELL, size, hp: 3, place, land: landAtTexel(P.x, P.y) }); }
+    for (const [P, place, dead, size] of [[F, 'farm', 0, 66], [D, 'pier', 2, 40], [WATER.throne, 'throne', 6, 74], ...WATER.springs.map(q => [{ x: q.x, y: q.y + 5 }, 'spring', 4, 30])]) objects.push({ id: objects.length, zone: 0, dead, live: dead + 1, x: P.x / CELL, y: P.y / CELL, size, hp: 3, place, land: landAtTexel(P.x, P.y) }); }
   for (const o of objects) { o.worth = o.size; o.size *= SHRINK; }
   const solid = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= TW || y >= TH) return true; const i = y * TW + x; return edge[i] || road[i] || waterT[i] < 255; };
   const scanClear = (x, y, half, deep, step) => { for (let yy = y - deep; yy <= y + 4; yy += step) for (let xx = x - half; xx <= x + half; xx += step) if (solid(xx, yy)) return false; return true; };
@@ -464,7 +489,7 @@ export async function makeWorld(progress = async () => {}) {
     }
   }
   // The island lies across the sea: its glade nearest the mainland faces the nearest mainland glade, so it can be woken from the coast.
-  { const isle = ZONES.filter(z => LANDS[z.land].row >= 3), main = ZONES.filter(z => LANDS[z.land].row < 3 && cellsOf[z.id].length);
+  for (const row of [0, 4]) { const isle = ZONES.filter(z => LANDS[z.land].row === row), main = ZONES.filter(z => LANDS[z.land].row > 0 && LANDS[z.land].row < 4 && cellsOf[z.id].length);
     let best = null, bd = Infinity; for (const a of isle) for (const m of main) { const d = Math.hypot(a.px - m.px, a.py - m.py); if (cellsOf[a.id].length && d < bd) { bd = d; best = [a.id, m.id]; } }
     if (best) { links[best[0]].add(best[1]); links[best[1]].add(best[0]); } }
   ZONES.forEach((z, n) => { z.adj = [...links[n]]; });

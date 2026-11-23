@@ -135,6 +135,13 @@ export function createAudio() {
     pop() { if (!live()) return; const t = ac.currentTime; if (t - lastPop < .5) return; lastPop = t; const f = pitch(SCALE[Math.floor(Math.random() * 4)] + 7); tone(soft, t, f, f * .999, .7, .03); },
     water() { if (!live()) return; const t = ac.currentTime; [0, 4, 7].forEach((n, k) => { const f = pitch(n + 7); tone(soft, t + k * .3, f, f * .999, 1.8, .025); }); },
     chime(big = false) { if (!live()) return; const t = ac.currentTime; (big ? [0, 4, 7, 12, 16] : [0, 4, 7, 12]).forEach((n, k) => { const f = pitch(n + 12); tone(soft, t + k * .36, f, f * .999, 2.6, .04); }); },
+    // Fishing: the swish of a cast and the plop of the bobber, a tug on the line, the reel's click, and how it ends.
+    cast() { if (!live()) return; const t = ac.currentTime, d = place(.05, 0, 1); hiss(d, t, .22, .5, 'highpass', 2400, .7); hiss(d, t + .42, .16, 1, 'bandpass', 900, 1); tone(d, t + .42, 520, 240, .1, .3); },
+    bite() { if (!live()) return; const t = ac.currentTime, d = place(.06, 0, 1); for (const k of [0, .16]) { hiss(d, t + k, .14, 1, 'bandpass', 1100, .9); tone(d, t + k, 380, 190, .1, .3); } },
+    nibble() { if (!live()) return; const t = ac.currentTime, d = place(.025, 0, 1); hiss(d, t, .08, 1, 'bandpass', 1500, 1.2); },
+    reel() { if (!live()) return; const t = ac.currentTime, d = place(.012, 0, 1); tone(d, t, 1900, 1700, .025, .4, 'square'); },
+    caught() { if (!live()) return; const t = ac.currentTime, d = place(.05, 0, 1); hiss(d, t, .3, 1, 'bandpass', 900, .8); [0, 4, 7, 12].forEach((n, k) => { const f = pitch(n + 12); tone(soft, t + .1 + k * .1, f, f * .999, 1.2, .035); }); },
+    lost() { if (!live()) return; const t = ac.currentTime; tone(soft, t, pitch(7), pitch(0), .5, .03); tone(soft, t + .18, pitch(4), pitch(-3), .6, .025); },
     buy() { if (!live()) return; const t = ac.currentTime; tone(soft, t, pitch(12), pitch(12) * .999, .6, .03); tone(soft, t + .12, pitch(16), pitch(16) * .999, .7, .025); },
   };
 }

@@ -1,9 +1,9 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=35';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=35';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=35';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=35';
-import { steer, standable, overWater, escape } from './nav.mjs?v=35';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=36';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=36';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=36';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=36';
+import { steer, standable, overWater, escape } from './nav.mjs?v=36';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -403,20 +403,25 @@ export function createRenderer(canvas, world, land, images) {
   const chunksIn = (z, pad = 0) => { const out = [], x0 = cam.x - W / 2 / z - 12 - pad, x1 = cam.x + W / 2 / z + 12 + pad, y0 = cam.y - H / 2 / z - pad, y1 = cam.y + H / 2 / z + 14 + pad;
     for (let cy = Math.max(0, Math.floor(y0 / FC)); cy <= Math.min(FROWS - 1, Math.floor(y1 / FC)); cy++) for (let cx = Math.max(0, Math.floor(x0 / FC)); cx <= Math.min(FCOLS - 1, Math.floor(x1 / FC)); cx++) out.push(cy * FCOLS + cx);
     return out; };
-  function drawFlora(s, time, dt) {
+  let grassGaps = 0, grassTiles = 0; // for testing: on-screen grass tiles not baked yet
+  function drawFlora(s, time, dt, pointer) {
     const z = cam.z;
     if (grass === 'none') return;
     const t = reduced || s.paused ? 0 : time / 1000, f = shown || s.h, fade = clamp((z - .6) / .25, 0, 1);
-    // Bake what is on screen, nearest the middle first, and when zoomed out the middle of the view as it will be
-    // once zoomed in, so the meadow is ready before the camera gets there.
-    const want = bakeRes(), lyke = !!flora[0].strands, end = performance.now() + (dt > .02 ? 2 : 3.5); // less baking on a frame already running late
-    const todo = chunksIn(Math.max(z, .85)).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
+    // Bake what is on screen first. Zoomed out, when no grass is drawn, bake much of the view ahead of time, nearest
+    // the mouse first (the wheel zooms towards it), so the meadow is ready wherever the camera comes down. A frame
+    // that is already running late bakes less; a frame with no grass to draw can afford more.
+    const want = bakeRes(), lyke = !!flora[0].strands, end = performance.now() + (!fade ? 7 : dt > .02 ? 2 : 3.5);
+    const todo = chunksIn(Math.max(z, .45)).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
     if (todo.length) {
-      const mx = cam.x / FC, my = cam.y / FC; todo.sort((a, b) => Math.hypot(a % FCOLS + .5 - mx, Math.floor(a / FCOLS) + .5 - my) - Math.hypot(b % FCOLS + .5 - mx, Math.floor(b / FCOLS) + .5 - my));
+      const P = pointer ? toWorld(pointer.x, pointer.y) : cam, mx = P.x / FC, my = P.y / FC, d = new Map();
+      for (const i of todo) d.set(i, (i % FCOLS + .5 - mx) ** 2 + (Math.floor(i / FCOLS) + .5 - my) ** 2 * 1.4);
+      todo.sort((a, b) => d.get(a) - d.get(b));
       for (const i of todo) { if (performance.now() > end) break; floraDirty[i] = 0; bakeChunk(i, s); }
     }
     if (!fade) return;
     const visible = chunksIn(z), closeUp = z >= 1.7 && quality >= 1, wind = t && quality >= 1;
+    grassGaps = 0; for (const i of visible) if (!baked.has(i)) grassGaps++; grassTiles = visible.length;
     ctx.globalAlpha = fade;
     if (z < (lyke ? 1 : 1.5)) { // wide views: the merged images, falling back to single tiles while one is rebuilt
       const seen = new Set(), loose = [];
@@ -606,23 +611,51 @@ export function createRenderer(canvas, world, land, images) {
   // Folk: once the farm in Sunfall Coast is restored a farmer works it, ambling up and down the path by it; once the
   // pier on the coast is mended a fisherman stands at its far end with his rod, looking out to sea.
   // assets/folk.png (ChatGPT art): rows are a farmer, a fisher and a snow villager; four stepping frames, then a wave.
-  const folk = []; let folkAt = 0;
+  const folk = []; let folkAt = 0, marks = {};
+  const ICON_BOBBER = 12;
   const isRoad = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= TW || y >= TH) return false; const r = world.road[y * TW + x]; return r === 1 || r === 2 || r === 4; };
+  // Ground an imp may stand on: dry, not sea, not rock.
+  const groundOk = (x, y) => x >= 0 && y >= 0 && x < TW && y < TH && !world.blocked[Math.floor(y / CELL) * CW + Math.floor(x / CELL)] && world.waterT[Math.floor(y) * TW + Math.floor(x)] === 255;
   function spawnFolk(s, time) {
     if (time - folkAt < 1000) return; folkAt = time;
     for (const o of world.objects) {
-      if (o.place !== 'farm' && o.place !== 'pier') continue; // springs have no keeper
-      const here = s.objHp?.[o.id] === 0 && Math.hypot(o.x * CELL - cam.x, o.y * CELL - cam.y) < 1100, f = folk.find(q => q.place === o.id);
+      if (o.place !== 'farm' && o.place !== 'pier' && o.place !== 'throne') continue; // springs have no keeper
+      // Old Tam fishes from his pier as soon as its glade is awake, mended or not; the others wait for their place.
+      const here = (o.place === 'pier' ? s.zones[o.zone]?.open : s.objHp?.[o.id] === 0) && Math.hypot(o.x * CELL - cam.x, o.y * CELL - cam.y) < 1100, f = folk.find(q => q.place === o.id);
+      if (!here && f) { for (let k = folk.length - 1; k >= 0; k--) if (folk[k].place === o.id) folk.splice(k, 1); continue; }
+      if (here && !f && o.place === 'throne') { // the demon lord sits his throne (he is part of its art); his imps play around it
+        const x = o.x * CELL, y = o.y * CELL;
+        folk.push({ place: o.id, kind: 'lord', land: o.land, zone: o.zone, x, y: y + .5, home: { x, y }, alpha: 1, stay: true, wave: 0, pause: 0, dist: 0, dir: 1, size: o.size });
+        for (let k = 0; k < 5; k++) {
+          let p = null; for (let n = 0; n < 30 && !p; n++) { const a = Math.random() * 6.283, r = 24 + Math.random() * 50, q = { x: x + Math.cos(a) * r, y: y + 10 + Math.sin(a) * r * .6 }; if (groundOk(q.x, q.y)) p = q; }
+          if (p) folk.push({ place: o.id, kind: 'imp', land: o.land, zone: o.zone, x: p.x, y: p.y, home: { x, y: y + 10 }, alpha: 0, wave: 0, pause: Math.random() * 3, dist: 0, dir: Math.random() < .5 ? 1 : -1, pose: 'stand' });
+        }
+        continue;
+      }
       if (here && !f) {
         const fisher = o.place === 'pier', P = WATER.pier, x = fisher ? P.x1 - P.dx * 5 : o.x * CELL + 12, y = fisher ? P.y1 - P.dy * 5 : o.y * CELL + 6;
         folk.push({ place: o.id, kind: o.place, land: o.land, zone: o.zone, x, y, home: { x, y }, sortY: null, hx: 1, hy: 0, dir: fisher ? (P.dx >= 0 ? 1 : -1) : 1, dist: 0, pause: 2, wave: 0, alpha: 0, row: fisher ? 1 : 0, stay: fisher });
       }
-      if (!here && f) folk.splice(folk.indexOf(f), 1);
     }
   }
   const HEAD = [[1, 0], [.7, .7], [0, 1], [-.7, .7], [-1, 0], [-.7, -.7], [0, -1], [.7, -.7]];
+  // An imp skitters from spot to spot near the throne, stops to poke at the ground, and hops when you tap it.
+  function stepImp(f, dt) {
+    if (f.wave > 0) { f.wave -= dt; f.pose = 'leap'; if (f.wave <= 0) f.pose = 'stand'; return; }
+    if (f.pause > 0) { f.pause -= dt; return; }
+    if (!f.goal) {
+      for (let n = 0; n < 8 && !f.goal; n++) { const a = Math.random() * 6.283, r = 16 + Math.random() * 60, q = { x: f.home.x + Math.cos(a) * r, y: f.home.y + Math.sin(a) * r * .6 }; if (groundOk(q.x, q.y)) f.goal = q; }
+      if (!f.goal) { f.pause = 1; return; }
+    }
+    const dx = f.goal.x - f.x, dy = f.goal.y - f.y, d = Math.hypot(dx, dy), v = Math.min(d, 10 * dt);
+    if (d < 1) { f.goal = null; f.pause = 1 + Math.random() * 4; f.pose = Math.random() < .35 ? 'graze' : 'stand'; return; }
+    if (!groundOk(f.x + dx / d * v, f.y + dy / d * v)) { f.goal = null; return; }
+    f.x += dx / d * v; f.y += dy / d * v; f.dist += v; f.pose = 'walk'; if (Math.abs(dx) > .3) f.dir = dx > 0 ? 1 : -1;
+  }
   function stepFolk(f, dt) {
     f.alpha = Math.min(1, f.alpha + dt * .6);
+    if (f.kind === 'lord') return;
+    if (f.kind === 'imp') { stepImp(f, dt); return; }
     if (f.wave > 0) { f.wave -= dt; return; }
     if (f.stay) return; // the fisherman keeps to his pier
     if (f.pause > 0) { f.pause -= dt; return; }
@@ -637,7 +670,28 @@ export function createRenderer(canvas, world, land, images) {
     }
     const v = 6 * dt; f.x += f.hx * v; f.y += f.hy * v; f.dist += v; if (Math.abs(f.hx) > .3) f.dir = f.hx > 0 ? 1 : -1;
   }
+  // A quest giver's marker: a gold ! for a new quest, a green ? when you have what they asked for.
+  function questBubble(x, top, mark, tNow) {
+    const by = top - 7 * cam.z + Math.sin(tNow * 3) * cam.z, r = Math.max(8, 3.4 * cam.z);
+    ctx.fillStyle = mark === '?' ? '#e8ffd8' : '#fff6df'; ctx.strokeStyle = '#3a2e23'; ctx.lineWidth = Math.max(1.5, cam.z * .5);
+    ctx.beginPath(); ctx.roundRect(x - r, by - r, r * 2, r * 1.8, r * .5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = mark === '?' ? '#4f9a2e' : '#d8902a'; ctx.font = `700 ${Math.round(r * 1.3)}px "Pixelify Sans",Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(mark, x, by - r * .05);
+  }
   function drawFolk(s, f, tNow) {
+    if (f.kind === 'lord') { // drawn with his throne; here only his hit area and his marker
+      const x = sx(f.x), y = sy(f.home.y), h = f.size * cam.z * .9;
+      f.sx = x; f.sy = y - h / 2; f.sh = h;
+      if (marks.lord) questBubble(x, y - h, marks.lord, tNow);
+      return;
+    }
+    if (f.kind === 'imp') {
+      const ph = f.pose === 'walk' ? Math.floor(f.dist / strideOf('imp') * WALK_FRAMES) % WALK_FRAMES : 0, art = critterCanvas('imp', f.pose || 'stand', ph, f.dir < 0), k = cam.z / SCALE, w = art.width * k, h = art.height * k, x = sx(f.x), y = sy(f.y);
+      const hop = f.wave > 0 ? Math.abs(Math.sin(f.wave * 9)) * 4 * cam.z : 0;
+      ctx.globalAlpha = f.alpha; ctx.fillStyle = 'rgba(30,18,24,.28)'; ctx.beginPath(); ctx.ellipse(x, y, w * .28, h * .07, 0, 0, 7); ctx.fill();
+      ctx.drawImage(art, snapX(x - w / 2), snapY(y - h - hop + cam.z * .5), w, h); ctx.globalAlpha = 1;
+      f.sx = x; f.sy = y - h / 2; f.sh = h;
+      return;
+    }
     const sheet = images.folk; if (!sheet) return;
     const fw = sheet.width / 5, fh = sheet.height / 3, k = cam.z / SCALE, w = fw * k, h = fh * k, x = sx(f.x), y = sy(f.y);
     const cell = f.wave > 0 ? 4 : f.pause > 0 ? 0 : Math.floor(f.dist / 2.2) % 4;
@@ -654,7 +708,36 @@ export function createRenderer(canvas, world, land, images) {
       ctx.fillStyle = '#d8902a'; ctx.font = `700 ${Math.round(r * 1.3)}px "Pixelify Sans",Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', x, by - r * .05);
       f.asks = true;
     } else f.asks = false;
+    if (f.kind === 'pier' && marks.fisher) questBubble(x, y - h, marks.fisher, tNow);
     ctx.globalAlpha = 1;
+  }
+  // Fishing: the line runs from just below the bottom of the screen, where you stand, out to the bobber.
+  // It sways and sags while you wait, plunges under with a ring of splashes at a bite and pulls taut on the reel.
+  function drawBobber(F, time) {
+    if (!F?.at) return;
+    const z = cam.z, t = time / 1000, x = sx(F.at.x), y = sy(F.at.y), img = images.items;
+    let lift = 0, sink = Math.sin(t * 2.4) * .4;
+    if (F.phase === 'fly') { const q = Math.min(1, (time - F.t0) / 450); lift = Math.sin(q * Math.PI) * 22 + (1 - q) * 6; sink = 0; }
+    else if (F.phase === 'wait' && F.nibble > time) sink = 1.6;
+    else if (F.phase === 'bite') sink = 3.6 + Math.sin(t * 24) * .8;
+    else if (F.phase === 'reel') sink = 1.8 + Math.sin(t * 11) * 1.2;
+    if (F.phase !== 'fly') { // rings on the water
+      const fast = F.phase === 'bite' || F.phase === 'reel', n = fast ? 3 : 2;
+      ctx.strokeStyle = '#eaf6ff'; ctx.lineWidth = Math.max(1, z * .45);
+      for (let k = 0; k < n; k++) { const q = (t * (fast ? 1.5 : .45) + k / n) % 1; ctx.globalAlpha = (1 - q) * .6; ctx.beginPath(); ctx.ellipse(x, y, (2 + q * 10) * z, (1 + q * 5) * z, 0, 0, 7); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+    const bx = x, by = y - (lift - sink) * z, taut = F.phase === 'reel' || F.phase === 'bite', ox = W / 2 + (F.at.x - cam.x) * z * .12, oy = H + 30;
+    ctx.strokeStyle = 'rgba(250,246,232,.75)'; ctx.lineWidth = Math.max(1, Math.min(2, z * .35)); ctx.beginPath(); ctx.moveTo(ox, oy);
+    const mx = (ox + bx) / 2 + (taut ? (Math.random() - .5) * 2 : Math.sin(t * 1.3) * 8), my = (oy + by) / 2 + (taut ? 0 : Math.min(60, Math.abs(oy - by) * .18));
+    ctx.quadraticCurveTo(mx, my, bx, by - 2.5 * z); ctx.stroke();
+    const s = 7 * z;
+    if (img) {
+      if (sink > 2.5) { ctx.save(); ctx.beginPath(); ctx.rect(bx - s, by - s * 2, s * 2, s * 1.55 + (3.6 - sink) * z); ctx.clip(); }
+      ctx.drawImage(img, ICON_BOBBER * 32, 0, 32, 32, Math.round(bx - s / 2), Math.round(by - s * .8), Math.round(s), Math.round(s));
+      if (sink > 2.5) ctx.restore();
+    } else { ctx.fillStyle = '#e04040'; ctx.beginPath(); ctx.arc(bx, by - 2 * z, 2 * z, 0, 7); ctx.fill(); }
+    if (F.phase === 'bite') questBubble(bx, by - s * .8, '!', t * 3);
   }
   // The fishing pier, plank by plank along its line from the land out to sea: boards laid across the walkway with a
   // seam every third texel, a darker rail of pilings down each side every seven. Weathered grey with boards missing
@@ -990,7 +1073,7 @@ export function createRenderer(canvas, world, land, images) {
     // Wildlife already on the land arrives quietly, as on a fresh load. Used when the whole state is swapped.
     regreet() { greeted = false; critterAt = -1; arrived.clear(); duckFirst = undefined; },
     pets: () => critters.filter(c => PETS[c.kind]),
-    onSplash: null, onSeen: null, hearing, keyOf,
+    onSplash: null, onSeen: null, hearing, keyOf, grassGaps: () => [grassGaps, grassTiles],
     // Butterflies, birds and leaping fish under a tap: the nearest one within reach, or null.
     hitWild(px, py) {
       let best = null, bd = Infinity;
@@ -1030,9 +1113,10 @@ export function createRenderer(canvas, world, land, images) {
         if (Math.abs(cam.x - cam.tx) + Math.abs(cam.y - cam.ty) < .05 && Math.abs(tl - lz) < .002) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false; newFrame();
+      marks = opts.marks || {};
       updateFog(s); spawnCritters(s, time); spawnFolk(s, time);
       ctx.fillStyle = '#365568'; ctx.fillRect(0, 0, W, H);
-      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawPier(s); drawFlora(s, time, dt); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawLight(s, time); drawWeather(s, time, dt);
+      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawPier(s); drawFlora(s, time, dt, opts.mouse); drawBobber(opts.fishing, time); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawLight(s, time); drawWeather(s, time, dt);
       drawParticles(dt);
       if (fogAlpha.some(a => a > 0)) { ctx.imageSmoothingEnabled = true; const drift = reduced || quality < 1 ? 0 : Math.sin(time * .00016) * 7 * cam.z; ctx.globalAlpha = .72; ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0), sy(0), TW * cam.z, TH * cam.z); ctx.globalAlpha = quality > 1 ? .5 : .35; if (quality > 1) ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0) + drift, sy(0) - drift * .5, TW * cam.z, TH * cam.z); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false; }
       if (!opts.title) drawLabels(s);

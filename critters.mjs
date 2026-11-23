@@ -111,6 +111,7 @@ function deerLegs(H, hx, fx, A, k, pose, p, bob, far) {
 const eye = (x, y, closed, c = 'e') => closed ? { d: [[x - 1, y + 1], [x, y + 1]], c: 'b!' } : { d: [[x, y]], c };
 
 export const CRITTERS = {
+  imp: { stride: 1.3 }, // Demonreach: a little horned imp, painted (assets/imp.png); it has no drawn shape.
   deer: { stride: 2.2, // Spirit deer: a red-brown deer with a pale rump and belly, and antlers of glowing mint.
     w: 36, h: 38, pal: { b: '#b9804c', c: '#efdcb8', k: '#8a5c38', h: '#3e2a1c', x: '#a8f2d6', e: '#1e140c', n: '#2a1c14' },
     build(pose, p) {
@@ -320,18 +321,22 @@ export function duckCanvas(hen, frame, flip) {
 }
 // Each land's own creature takes the deer's place there; rabbits are everywhere.
 // By land cell: the second cells of Frostmere, Ember Basin and Mistfen share their region's creature; the island has two.
-export const NATIVE = [null, 'fox', 'lynx', 'tortoise', 'otter', 'lynx', 'fox', 'otter', 'hedgehog', 'toadling', 'crab'];
+export const NATIVE = [null, 'fox', 'lynx', 'tortoise', 'otter', 'lynx', 'fox', 'otter', 'hedgehog', 'toadling', 'crab', 'imp', 'imp'];
 
 const made = new Map();
 export const WALK_FRAMES = 8;
 // How far, in texels, one full stride carries each animal, so its feet stay planted as it moves.
-export const strideOf = name => 4 * (CRITTERS[name].stride ?? 2) / SCALE;
+export const strideOf = name => 4 * (CRITTERS[name]?.stride ?? 2) / SCALE;
 // pose: stand, walk, graze or sleep; ph is the frame of the walk, 0 to 7.
 // The deer and fawn are painted (ChatGPT art cut by tools/build_critter_art.py into assets/deer.png: walk
 // frames 0-7, then stand, graze, sleep and leap). The fawn has its own sheet in the same layout (assets/fawn.png);
 // without it, the fawn is the deer smaller, without antlers.
 let deerSheet = null, fawnSheet = null;
 export function useDeerSheet(img, fawn = null) { deerSheet = img; fawnSheet = fawn; made.clear(); }
+// Other painted creatures in the same layout (the imps of Demonreach: assets/imp.png).
+const SHEETS = {};
+export function useSheet(name, img) { if (img) { SHEETS[name] = img; made.clear(); } }
+function ownSheet(sheet, cell) { const cw = sheet.width / 12, c = document.createElement('canvas'); c.width = cw; c.height = sheet.height; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(sheet, cell * cw, 0, cw, sheet.height, 0, 0, cw, sheet.height); return c; }
 const SHEET_POSE = { stand: 8, graze: 9, sleep: 10, leap: 11 };
 function fromSheet(cell, fawn) {
   const own = fawn && fawnSheet, sheet = own ? fawnSheet : deerSheet, cw = sheet.width / 12, ch = sheet.height, k = fawn && !own ? .72 : 1, c = document.createElement('canvas');
@@ -345,7 +350,7 @@ export function critterCanvas(name, pose, ph, flip) {
   let c = made.get(key);
   if (c) return c;
   const C = CRITTERS[name];
-  c = deerSheet && (name === 'deer' || name === 'fawn') ? fromSheet(pose === 'walk' ? ph : SHEET_POSE[pose] ?? 8, name === 'fawn') : raster(C.w, C.h, C.pal, C.build(pose, ph / WALK_FRAMES));
+  c = SHEETS[name] ? ownSheet(SHEETS[name], pose === 'walk' ? ph : SHEET_POSE[pose] ?? 8) : deerSheet && (name === 'deer' || name === 'fawn') ? fromSheet(pose === 'walk' ? ph : SHEET_POSE[pose] ?? 8, name === 'fawn') : raster(C.w, C.h, C.pal, C.build(pose, ph / WALK_FRAMES));
   if (flip) { const f = document.createElement('canvas'); f.width = c.width; f.height = c.height; const g = f.getContext('2d'); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(c, 0, 0); c = f; }
   made.set(key, c);
   return c;
