@@ -1,11 +1,13 @@
-import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=39';
-import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=39';
-import { createLand } from './land.mjs?v=39';
-import { createRenderer, GRASS_STYLES } from './render.mjs?v=39';
-import { createAudio } from './audio.mjs?v=39';
-import { spiritFace, useDeerSheet, useSheet } from './critters.mjs?v=39';
-import { fishingInit } from './fishing.mjs?v=39';
-import { createAngling } from './angling.mjs?v=39';
+import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=40';
+import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=40';
+import { createLand } from './land.mjs?v=40';
+import { createRenderer, GRASS_STYLES } from './render.mjs?v=40';
+import { createAudio } from './audio.mjs?v=40';
+import { spiritFace, useDeerSheet, useSheet } from './critters.mjs?v=40';
+import { fishingInit } from './fishing.mjs?v=40';
+import { createAngling } from './angling.mjs?v=40';
+import { createKeepers } from './keepers.mjs?v=40';
+import { findsInit, NETS } from './finds.mjs?v=40';
 
 const KEY = 'little-wilds-2-v2', CARDS_KEY = 'little-wilds-2-postcards', SOUND_KEY = 'little-wilds-2-muted', VOLUME_KEY = 'little-wilds-2-volume', GRASS_KEY = 'little-wilds-2-grass', MUSIC_KEY = 'little-wilds-2-music';
 const $ = id => document.getElementById(id);
@@ -31,7 +33,7 @@ function toast(text, soft = false) {
   toastTimer = setTimeout(() => { $('toast').classList.remove('show'); if (softToasts.length) setTimeout(() => toast(softToasts.shift(), true), 350); }, 3200);
 }
 let titleOn = false, tour = 0, tourAt = 0, held = [];
-let angling = null;
+let angling = null, keepers = null;
 // A new journal entry: a little gift of seeds, and a toast. Finishing a page raises all land income for good.
 function jot(key) {
   if (!s || preview || !journalLabel(key) || s.journal?.[key]) return;
@@ -74,7 +76,7 @@ async function buildWorld() {
   world.waterMoved = z => land.markWater(z);
 }
 function attach() {
-  initObjects(s, world); fishingInit(s);
+  initObjects(s, world); fishingInit(s); findsInit(s);
   land.setSource(s.h, s.zones); land.flushAll();
   view?.dispose(); quarters = []; glideTo = -1; mapFrom = null; preview = null;
   $('btn-preview').textContent = 'Preview'; $('btn-preview').setAttribute('aria-pressed', false); $('btn-map').textContent = 'Map';
@@ -89,6 +91,8 @@ function attach() {
   currentZone = firstOpen(); view.focusZone(currentZone, true);
   angling ||= createAngling({ $, audio, toast, show, fmt, save, jot, pulseSeeds, s: () => s, view: () => view, world: () => world });
   angling.reset();
+  keepers ||= createKeepers({ $, audio, toast, show, fmt, save, jot, pulseSeeds, s: () => s, view: () => view, world: () => world }, angling);
+  keepers.reset();
 }
 const firstOpen = () => { const i = s.zones.findIndex(z => z.open && !z.done); return i < 0 ? 0 : i; };
 const landUnderView = () => ZONES[currentZone].land;
@@ -160,6 +164,7 @@ $('modal-body').addEventListener('click', e => {
   if (up && buyUpgrade(s, up.dataset.up)) { audio.buy(); save(); show('tend', tendHTML()); return; }
   const f = e.target.closest('[data-focus]');
   if (f) { const z = +f.dataset.focus; if (gladeBuyable(s, z)) wakeGlade(z); view.focusZone(z); $('modal').close(); return; }
+  if (keepers.modalClick(e)) return;
   if (angling.modalClick(e)) return;
   const a = e.target.closest('[data-act]'); if (!a) return;
   ({ land() { view.focusLand(landUnderView()); $('modal').close(); }, map() { $('modal').close(); toggleMap(true); }, exportSave, importSave, reset: resetSave, cards: openCards, journal: openJournal, valley: openValley })[a.dataset.act]?.();
@@ -282,7 +287,8 @@ $('btn-preview').onclick = () => { audio.start(); togglePreview(); };
 
 /* Then and now, sound */
 $('btn-map').onclick = () => { audio.start(); toggleMap(); };
-$('btn-fish').onclick = () => { audio.start(); wake(); if (preview) { toast('Switch Preview off to fish.'); return; } angling.toggle(); };
+$('btn-fish').onclick = () => { audio.start(); wake(); if (preview) { toast('Switch Preview off to fish.'); return; } keepers.toggleNet(false); angling.toggle(); };
+$('btn-net').onclick = () => { audio.start(); wake(); if (preview) { toast('Switch Preview off to catch bugs.'); return; } keepers.toggleNet(); };
 $('btn-bag').onclick = () => { audio.start(); angling.openBag(); };
 $('btn-then').onclick = () => { $('banner').classList.remove('show'); thenX = thenX == null ? innerWidth / 2 : null; $('btn-then').setAttribute('aria-pressed', thenX != null); if (thenX != null) toast('Drag across the land to compare. Press again to finish.'); };
 const syncSound = () => { $('btn-sound').textContent = audio.muted ? 'Muted' : 'Sound'; $('btn-sound').setAttribute('aria-pressed', audio.muted); };
@@ -304,7 +310,8 @@ canvas.addEventListener('pointerdown', e => {
   const sign = view.hitSign(e.clientX, e.clientY);
   if (sign >= 0) { pointers.delete(e.pointerId); wakeGlade(sign); return; }
   const folkHit = view.hitFolk(e.clientX, e.clientY);
-  if (folkHit && angling.tapFolk(folkHit)) { pointers.delete(e.pointerId); return; }
+  if (folkHit && (keepers.tapFolk(folkHit) || angling.tapFolk(folkHit))) { pointers.delete(e.pointerId); return; }
+  if (keepers.pointerDown(e, performance.now())) { pointers.delete(e.pointerId); return; }
   if (angling.pointerDown(e, performance.now())) { pointers.delete(e.pointerId); return; }
   const under = view.toCell(e.clientX, e.clientY), cellAt = Math.round(Math.max(0, Math.min(CH - 1, under.y))) * CW + Math.round(Math.max(0, Math.min(CW - 1, under.x))), zoneAt = world.zone[cellAt];
   // Far out on the map, a drag looks around instead of painting.
@@ -328,6 +335,7 @@ canvas.addEventListener('pointerdown', e => {
 canvas.addEventListener('pointermove', e => {
   wake();
   const prev = pointers.get(e.pointerId); pointer.x = e.clientX; pointer.y = e.clientY; pointer.on = e.pointerType !== 'touch' || !!prev;
+  keepers?.pointerMove(e, performance.now());
   if (!prev) { if (e.pointerType === 'mouse') hoverCursor(e.clientX, e.clientY); return; }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (thenX != null) { thenX = Math.max(0, Math.min(innerWidth, e.clientX)); return; }
@@ -351,8 +359,10 @@ canvas.addEventListener('wheel', e => { e.preventDefault(); wake(); if (mapFrom)
 addEventListener('keydown', e => {
   if (!ready || $('modal').open) return;
   if (titleOn) { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); audio.start(); hideTitle(); } return; }
+  if (!preview && e.code === 'KeyF') keepers.toggleNet(false);
+  if (!preview && keepers.keyDown(e)) { wake(); return; }
   if (!preview && angling.keyDown(e, performance.now())) { wake(); return; }
-  if (e.code === 'Escape') { if (angling.on) { angling.toggle(false); return; } showTitle(); return; }
+  if (e.code === 'Escape') { if (keepers.net) { keepers.toggleNet(false); return; } if (angling.on) { angling.toggle(false); return; } showTitle(); return; }
   wake();
   const moves = { ArrowLeft: [90, 0], ArrowRight: [-90, 0], ArrowUp: [0, 90], ArrowDown: [0, -90], KeyA: [90, 0], KeyD: [-90, 0], KeyW: [0, 90], KeyS: [0, -90] };
   if (moves[e.code]) { e.preventDefault(); view.pan(...moves[e.code]); }
@@ -417,7 +427,7 @@ function frame(now) {
       if (gain > 0) { view.spark(c.x, c.y, gain * 7, 3); audio.dig(gain * 25); wake(); }
     }
     tick(s, world, dt, ev, frameNo++ % SPIRIT_SLICES, SPIRIT_SLICES);
-    if (!titleOn) angling.step(now, dt);
+    if (!titleOn) { angling.step(now, dt); keepers.step(now, dt); }
     if (ev.length) handle(ev, now);
   } else if (timelapse) stepTimelapse(now);
   land.flush(timelapse ? 6 : 3, view.viewBox());
@@ -429,7 +439,7 @@ function frame(now) {
   s.zones.forEach((z, i) => { const q = z.open && !z.done ? Math.floor(zonePct(s, world, i) * 4) : 0; if (quarters[i] !== undefined && q > quarters[i] && i === currentZone) { const c = $('zonechip'); c.classList.remove('pulse'); void c.offsetWidth; c.classList.add('pulse'); view.glow(i, '200,255,170'); } quarters[i] = q; });
   if (now - rateAt > 1000) { const d = s.seeds - rateSeeds; if (d >= 0) rate += (d / ((now - rateAt) / 1000) - rate) * .35; rateSeeds = s.seeds; rateAt = now; $('rate').textContent = rate >= 1 ? '+' + fmt(rate) + '/s' : ''; }
   if (titleOn) { stepTour(now); if (now - lastUI > 200) titleRecords(); }
-  view.draw(s, now, dt, { carry, fishing: angling.state, shadows: angling.shadows, marks: angling.marks, mouse: pointer.on ? pointer : null, pointer: pointer.on && !carry && !titleOn && !angling.on && !angling.placing && view.cam.z >= .9 ? pointer : null, holding: pointer.holding, then: thenX, title: titleOn, camSpeed: titleOn ? .35 : now < gliding ? 2.2 : 3.2 });
+  view.draw(s, now, dt, { carry, fishing: angling.state, shadows: angling.shadows, marks: angling.marks, mouse: pointer.on ? pointer : null, pointer: pointer.on && !carry && !titleOn && !angling.on && !angling.placing && !keepers.net && view.cam.z >= .9 ? pointer : null, bugs: titleOn ? null : keepers.bugs, holes: keepers.holes, swing: keepers.swing, netRing: keepers.net && pointer.on && !titleOn ? { x: pointer.x, y: pointer.y, r: NETS[s.net]?.reach || 9 } : null, holding: pointer.holding, then: thenX, title: titleOn, camSpeed: titleOn ? .35 : now < gliding ? 2.2 : 3.2 });
   if (now - lastUI > 200) { lastUI = now; updateUI(); renderHint(); const ear = view.hearing(); audio.hear(ear.sources, ear.near, .2); if (!pointers.size && !$('modal').open && thenX == null && now - lastActive > 14000) document.body.classList.add('quiet'); }
   if (now - lastSave > 6000) { lastSave = now; save(); }
 }
@@ -443,10 +453,10 @@ addEventListener('pagehide', save);
 async function main() {
   try {
     await nextFrame();
-    const [worldImg, spirits, pets, flyers, deer, fish, fawn, folk, raincloud, places, imp, items, portraits, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=39').catch(() => null), load('assets/fish.png?v=39').catch(() => null), load('assets/fawn.png?v=39').catch(() => null), load('assets/folk.png?v=39').catch(() => null), load('assets/raincloud.png?v=39').catch(() => null), load('assets/places.png?v=39').catch(() => null), load('assets/imp.png?v=39').catch(() => null), load('assets/items.png?v=39').catch(() => null), load('assets/portraits.png?v=39').catch(() => null), ...LANDS.slice(1).map((_, n) => lookOf(n + 1) === n + 1 ? load(`assets/biome-${n + 1}.png?v=39`).catch(() => null) : null)]);
+    const [worldImg, spirits, pets, flyers, deer, fish, fawn, folk, raincloud, places, imp, items, portraits, keepersImg, stalls, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=40').catch(() => null), load('assets/fish.png?v=40').catch(() => null), load('assets/fawn.png?v=40').catch(() => null), load('assets/folk.png?v=40').catch(() => null), load('assets/raincloud.png?v=40').catch(() => null), load('assets/places.png?v=40').catch(() => null), load('assets/imp.png?v=40').catch(() => null), load('assets/items.png?v=40').catch(() => null), load('assets/portraits.png?v=40').catch(() => null), load('assets/keepers.png?v=40').catch(() => null), load('assets/stalls.png?v=40').catch(() => null), ...LANDS.slice(1).map((_, n) => lookOf(n + 1) === n + 1 ? load(`assets/biome-${n + 1}.png?v=40`).catch(() => null) : null)]);
     if (deer) useDeerSheet(deer, fawn);
     useSheet('imp', imp);
-    images = { world: worldImg, spirits, pets, flyers, fish, folk, raincloud, places, items, portraits, biomes: [null, ...biomes] };
+    images = { world: worldImg, spirits, pets, flyers, fish, folk, raincloud, places, items, portraits, keepers: keepersImg, stalls, biomes: [null, ...biomes] };
     await buildWorld();
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch { raw = null; }
@@ -454,7 +464,7 @@ async function main() {
     const away = (Date.now() - (s.last || Date.now())) / 1000;
     await loading('Waking the spirits…');
     attach();
-    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__lw = { togglePreview, get preview() { return !!preview; }, get s() { return s; }, get w() { return world; }, get v() { return view; }, get land() { return land; }, get angling() { return angling; }, wakeGlade, toggleMap, celebrate, tick: (n, dt = .5) => { const ev = []; for (let k = 0; k < n; k++) tick(s, world, dt, ev); handle(ev, performance.now()); land.markAll(); view.allFlora(); updateUI(); return ev.length; }, grant: n => { s.seeds += n; updateUI(); } };
+    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__lw = { togglePreview, get preview() { return !!preview; }, get s() { return s; }, get w() { return world; }, get v() { return view; }, get land() { return land; }, get angling() { return angling; }, get keepers() { return keepers; }, wakeGlade, toggleMap, celebrate, tick: (n, dt = .5) => { const ev = []; for (let k = 0; k < n; k++) tick(s, world, dt, ev); handle(ev, performance.now()); land.markAll(); view.allFlora(); updateUI(); return ev.length; }, grant: n => { s.seeds += n; updateUI(); } };
     ready = true; $('loading').style.display = 'none'; updateUI();
     if (s.touched && s.season) jot(s.season);
     showTitle();

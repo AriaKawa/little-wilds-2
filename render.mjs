@@ -1,10 +1,11 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=39';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=39';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=39';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=39';
-import { steer, standable, overWater, escape } from './nav.mjs?v=39';
-import { trapCount } from './fishing.mjs?v=39';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=40';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=40';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=40';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=40';
+import { steer, standable, overWater, escape } from './nav.mjs?v=40';
+import { trapCount } from './fishing.mjs?v=40';
+import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=40';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -500,10 +501,12 @@ export function createRenderer(canvas, world, land, images) {
     for (const c of critters) if (PETS[c.kind]) { if (!s.paused) stepPet(s, c, dt, night); const x = c.x, y = c.y; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, c }); }
     for (const t of s.trees) { const y = t.y * CELL; if (z < .5 && hash(t.x * 7 | 0, t.y * 7 | 0, 3) > .5) continue; if (t.x * CELL > lx && t.x * CELL < hx && y > ly && y < hy) items.push({ y, t }); }
     for (const f of folk) { if (!s.paused) stepFolk(f, dt); if (f.x > lx && f.x < hx && f.y > ly && f.y < hy) items.push({ y: f.sortY ?? f.y, f }); }
+    for (const [kind, zone, row] of KEEPERS) { const st = stallOf(world, zone); if (st && s.zones[zone]?.open && st.x > lx && st.x < hx && st.y > ly && st.y < hy) items.push({ y: st.y, stall: { st, row } }); }
     items.sort((a, b) => a.y - b.y);
     const atlas = images.world, spirits = images.spirits, tNow = time / 1000;
     const art = drawArt;
     for (const it of items) {
+      if (it.stall) { drawStall(it.stall); continue; }
       if (it.o) {
         const o = it.o, x = sx(o.x * CELL), y = sy(o.y * CELL), hp = s.objHp ? s.objHp[o.id] : o.hp, size = o.size * z, born = revives.get(o.id);
         const foot = z > .9 ? underfoot(artSrc(o, hp > 0 ? o.dead : o.live), o.size, o.art, x, y, o.place === 'farm') : null;
@@ -639,6 +642,15 @@ export function createRenderer(canvas, world, land, images) {
       }
     }
   }
+  // Pip's bug stall in Honey Meadow and Bramwell's dig tent at Red Terrace, each with its keeper beside it.
+  const KEEPERS = [['pip', PIP_ZONE, 0], ['bram', BRAM_ZONE, 1]];
+  function spawnKeepers(s) {
+    for (const [kind, zone, row] of KEEPERS) {
+      const st = stallOf(world, zone), here = st && s.zones[zone]?.open && Math.hypot(st.x - cam.x, st.y - cam.y) < 1100, f = folk.find(q => q.kind === kind);
+      if (!here && f) folk.splice(folk.indexOf(f), 1);
+      if (here && !f) folk.push({ kind, zone, land: ZONES[zone].land, x: st.kx, y: st.ky, home: { x: st.kx, y: st.ky }, dir: -1, dist: 0, pause: 0, wave: 0, alpha: 0, row, stay: true });
+    }
+  }
   const HEAD = [[1, 0], [.7, .7], [0, 1], [-.7, .7], [-1, 0], [-.7, -.7], [0, -1], [.7, -.7]];
   // An imp skitters from spot to spot near the throne, stops to poke at the ground, and hops when you tap it.
   function stepImp(f, dt) {
@@ -677,6 +689,42 @@ export function createRenderer(canvas, world, land, images) {
     }
     const v = 6 * dt; f.x += f.hx * v; f.y += f.hy * v; f.dist += v; if (Math.abs(f.hx) > .3) f.dir = f.hx > 0 ? 1 : -1;
   }
+  function drawStall({ st, row }) {
+    const img = images.stalls; if (!img) return;
+    const c = img.height, size = 34 * cam.z, x = sx(st.x), y = sy(st.y);
+    ctx.fillStyle = 'rgba(30,24,18,.2)'; ctx.beginPath(); ctx.ellipse(x, y - cam.z, size * .42, size * .09, 0, 0, 7); ctx.fill();
+    ctx.drawImage(img, row * c, 0, c, c, snapX(x - size / 2), snapY(y - size + cam.z), size, size);
+  }
+  // Dig spots: a star of cracks in the ground. Dug holes linger a minute, then grass closes over them.
+  function drawDigs(s, holes) {
+    const img = images.items; if (!img || cam.z < .5) return;
+    const z = cam.z, size = Math.max(10, 11 * z), now = performance.now();
+    const cell = (i, x, y, a = 1) => { const X = sx(x), Y = sy(y); if (X < -30 || Y < -30 || X > W + 30 || Y > H + 30) return; ctx.globalAlpha = a; ctx.drawImage(img, i % 16 * 32, Math.floor(i / 16) * 32, 32, 32, Math.round(X - size / 2), Math.round(Y - size * .62), Math.round(size), Math.round(size)); ctx.globalAlpha = 1; };
+    for (const d of s.digs || []) cell(97, d.x, d.y);
+    for (const h of holes || []) cell(98, h.x, h.y, Math.min(1, (60000 - (now - h.t)) / 8000));
+  }
+  // Bugs out on the land, drawn from their icons: butterflies beat their wings, fireflies glow, the shy creep about.
+  function drawBugs(list, time) {
+    const img = images.items; if (!list?.length || !img || cam.z < .9) return;
+    const z = cam.z, t = time / 1000;
+    for (const q of list) {
+      const b = q.b, x = sx(q.x), y = sy(q.y), size = b.size * 1.8 * z, top = y - q.lift * z;
+      if (x < -40 || y < -60 || x > W + 40 || y > H + 60 || q.alpha <= 0) continue;
+      ctx.globalAlpha = q.alpha * .35; ctx.fillStyle = 'rgba(30,24,18,1)'; ctx.beginPath(); ctx.ellipse(x, y, size * .3, size * .1, 0, 0, 7); ctx.fill();
+      if (b.move === 'glow') { const p = .55 + .45 * Math.sin(t * 2.4 + q.ph); ctx.globalAlpha = q.alpha * p * .7; const g = ctx.createRadialGradient(x, top, 0, x, top, size * 1.3); g.addColorStop(0, 'rgba(255,240,140,.9)'); g.addColorStop(1, 'rgba(255,240,140,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, top, size * 1.3, 0, 7); ctx.fill(); }
+      ctx.globalAlpha = q.alpha;
+      const flap = b.move === 'flutter' && !q.perched ? .35 + .65 * Math.abs(Math.cos(t * (b.tier >= 3 ? 7 : 11) + q.ph)) : 1;
+      ctx.save(); ctx.translate(Math.round(x), Math.round(top - size / 2)); ctx.scale((q.dir < 0 && b.move !== 'flutter' ? -1 : 1) * flap, 1);
+      ctx.drawImage(img, b.icon % 16 * 32, Math.floor(b.icon / 16) * 32, 32, 32, -size / 2, -size / 2, size, size); ctx.restore();
+      if (b.tier >= 3 && !reduced && Math.random() < .03) addParticle({ x: q.x + (Math.random() - .5) * b.size, y: q.y - q.lift - b.size * .5, vx: 0, vy: -6, g: 0, life: .7, age: 0, size: .8, color: b.tier >= 4 ? '#ffe680' : '#fff6d0' });
+    }
+    ctx.globalAlpha = 1;
+  }
+  // The net: a ring round the pointer showing its reach, and a swish when you swing.
+  function drawNet(ring, swing, time) {
+    if (ring) { ctx.strokeStyle = 'rgba(255,250,230,.6)'; ctx.lineWidth = 2; ctx.setLineDash([4, 5]); ctx.lineDashOffset = -time * .02; ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r * cam.z, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+    if (swing) { const k = (performance.now() - swing.t) / 300; ctx.globalAlpha = 1 - k; ctx.strokeStyle = '#fffaf0'; ctx.lineWidth = Math.max(2, 3 * (1 - k) * cam.z); ctx.beginPath(); ctx.arc(sx(swing.x), sy(swing.y), swing.r * cam.z * (.6 + k * .5), -2.4 + k * 2, -.4 + k * 2); ctx.stroke(); ctx.globalAlpha = 1; }
+  }
   // A quest giver's marker: a gold ! for a new quest, a green ? when you have what they asked for.
   function questBubble(x, top, mark, tNow) {
     const by = top - 7 * cam.z + Math.sin(tNow * 3) * cam.z, r = Math.max(8, 3.4 * cam.z);
@@ -698,6 +746,15 @@ export function createRenderer(canvas, world, land, images) {
       ctx.drawImage(art, snapX(x - w / 2), snapY(y - h - hop + cam.z * .5), w, h); ctx.globalAlpha = 1;
       f.sx = x; f.sy = y - h / 2; f.sh = Math.max(h, 18);
       if (f.lost || f.stray) questBubble(x, y - h - hop, '!', tNow);
+      return;
+    }
+    if (f.kind === 'pip' || f.kind === 'bram') {
+      const sheet = images.keepers; if (!sheet) return;
+      const fw = sheet.width / 2, fh = sheet.height / 2, k = cam.z / SCALE, w = fw * k, h = fh * k, x = sx(f.x), y = sy(f.y), hop = f.wave > 0 ? Math.abs(Math.sin(f.wave * 7)) * 1.5 * cam.z : 0;
+      ctx.globalAlpha = f.alpha; ctx.fillStyle = 'rgba(30,24,18,.25)'; ctx.beginPath(); ctx.ellipse(x, y, w * .26, h * .07, 0, 0, 7); ctx.fill();
+      ctx.save(); ctx.translate(snapX(x), 0); if (f.dir < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, (f.wave > 0 ? 1 : 0) * fw, f.row * fh, fw, fh, -w / 2, snapY(y - h - hop + cam.z * .5), w, h); ctx.restore();
+      f.sx = x; f.sy = y - h / 2; f.sh = h; ctx.globalAlpha = 1;
+      if (marks[f.kind]) questBubble(x, y - h, marks[f.kind], tNow);
       return;
     }
     const sheet = images.folk; if (!sheet) return;
@@ -1121,6 +1178,7 @@ export function createRenderer(canvas, world, land, images) {
     startle(w) { if (w.kind === 'fish') { burst(w.o.x + w.o.dir * w.o.len * .5, w.o.y - 8, 8, ['#ffd36b', '#fff'], 16); return; } w.o.spook = 1.6; w.o.tx = w.o.x + (Math.random() - .5) * 300; w.o.ty = w.o.y + (Math.random() - .5) * 200; burst(w.o.x, w.o.y - 14, 6, ['#fff', '#ffe28a'], 14); },
     strays() { return folk.filter(f => f.kind === 'imp' && (f.stray || f.lost)); },
     hitFolk(px, py) { for (const f of folk) if (f.sx != null && Math.abs(px - f.sx) < Math.max(14, f.sh * .35) && Math.abs(py - f.sy) < Math.max(18, f.sh * .6)) return f; return null; },
+    dirt(x, y) { burst(x, y - 3, 16, ['#8a6a48', '#6e5238', '#b08a62', '#c9a87a'], 26); },
     cheer(land) { for (const f of folk) if (f.land === land) { f.wave = 3; f.pause = 3; } },
     cam, resize, focusZone, focusAll, focusLand, zoomAt, pan, toCell, toWorld,
     glide(x, y, z) { anchor = null; cam.tx = x; cam.ty = y; cam.tz = z; clampCam(); },
@@ -1151,13 +1209,15 @@ export function createRenderer(canvas, world, land, images) {
         if (Math.abs(cam.x - cam.tx) + Math.abs(cam.y - cam.ty) < .05 && Math.abs(tl - lz) < .002) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false; newFrame();
+      ctx.textRendering = 'optimizeSpeed'; // Pixelify Sans draws its fi and fl ligatures wrong; spell them out
       marks = opts.marks || {};
-      updateFog(s); spawnCritters(s, time); spawnFolk(s, time);
+      updateFog(s); spawnCritters(s, time); spawnFolk(s, time); spawnKeepers(s);
       ctx.fillStyle = '#365568'; ctx.fillRect(0, 0, W, H);
-      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawPier(s); drawFlora(s, time, dt, opts.mouse); drawShadows(opts.shadows, time); drawTraps(s, time); drawBobber(opts.fishing, time); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawLight(s, time); drawWeather(s, time, dt);
+      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawPier(s); drawFlora(s, time, dt, opts.mouse); drawDigs(s, opts.holes); drawShadows(opts.shadows, time); drawTraps(s, time); drawBobber(opts.fishing, time); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawBugs(opts.bugs, time); drawLight(s, time); drawWeather(s, time, dt);
       drawParticles(dt);
       if (fogAlpha.some(a => a > 0)) { ctx.imageSmoothingEnabled = true; const drift = reduced || quality < 1 ? 0 : Math.sin(time * .00016) * 7 * cam.z; ctx.globalAlpha = .72; ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0), sy(0), TW * cam.z, TH * cam.z); ctx.globalAlpha = quality > 1 ? .5 : .35; if (quality > 1) ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0) + drift, sy(0) - drift * .5, TW * cam.z, TH * cam.z); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false; }
       if (!opts.title) drawLabels(s);
+      if (!opts.title) drawNet(opts.netRing, opts.swing, time);
       if (opts.then !== null && opts.then !== undefined) {
         thenC ||= land.dayOne();
         ctx.save(); ctx.beginPath(); ctx.rect(0, 0, opts.then, H); ctx.clip(); drawGround(thenC);

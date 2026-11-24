@@ -1,9 +1,9 @@
 // Fishing, played: the rod (F), casting into water, the bite, the reel, the catch, the backpack (B), Old Tam's
 // market on the pier, and the quests of Old Tam and Lord Cinderbrow. The rules are in fishing.mjs.
-import { ZONES } from './world.mjs?v=39';
-import { income } from './sim.mjs?v=39';
-import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest, canFish, rollCursed, priceOf, CURSED_PRICE, BAIT, TACKLE, shopPrice, useBait, ferryOpen, ferryCost, DEMON_LANDS } from './fishing.mjs?v=39';
-import { mapsDone } from './sim.mjs?v=39';
+import { ZONES } from './world.mjs?v=40';
+import { income } from './sim.mjs?v=40';
+import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest, canFish, rollCursed, priceOf, CURSED_PRICE, BAIT, TACKLE, shopPrice, useBait, ferryOpen, ferryCost, DEMON_LANDS } from './fishing.mjs?v=40';
+import { mapsDone } from './sim.mjs?v=40';
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
@@ -27,6 +27,7 @@ export function createAngling(g) {
   let on = false, F = { phase: 'idle' }, hold = false, selected = -1, marks = {}, cardTimer = 0, tickAt = 0, lastTrack = '', placing = false, shadowAt = 0, trapTap = null, lastClock = '';
   const shadows = [];
   const inc = () => income(S());
+  const UI = {}, extraRows = [], bagRows = [];
 
   /* The rod */
   function toggle(want = !on) {
@@ -220,18 +221,19 @@ export function createAngling(g) {
     const clock = `${icon(c.night ? ICON.moon : ICON.sun)}<span><b>${c.night ? 'Night' : 'Day'}</b><small>${c.night ? 'Dawn' : 'Nightfall'} in ${m}:${sec} · ${season[0].toUpperCase() + season.slice(1)}${s.wx?.kind === 'rain' ? ' · rain' : s.wx?.kind === 'snow' ? ' · snow' : ''}</small></span>`;
     if (clock !== lastClock) { $('clock').innerHTML = clock; $('clock').classList.toggle('night', c.night); lastClock = clock; }
     $('btn-bag').classList.toggle('full', s.bag.length >= s.bagSize);
-    marks = { fisher: questMark(s, 'fisher'), lord: questMark(s, 'lord') };
+    marks = Object.fromEntries(Object.keys(GIVERS).map(k => [k, questMark(s, k)]));
     if (placing && !$('modal').open) $('fishbar').hidden = false;
     const rows = Object.keys(GIVERS).filter(k => questState(s, k).taken).map(k => {
       const Q = questOf(s, k), ready = questReady(s, k);
-      return `<button class="qt${ready ? ' ready' : ''}" data-qt="${k}" title="${esc(GIVERS[k].name)}: ${esc(Q.title)}"><i class="portrait mini p-${k}"></i><span><b>${esc(Q.title)}</b>${Q.want.map(w => { const h = Math.min(wantHave(s, w), w.n); return `<small class="${h >= w.n ? 'ok' : ''}">${w.fish ? icon(w.fish === 'any' ? 0 : FISH_BY[w.fish].icon, 'tiny') : '✿ '}${h} / ${w.n}</small>`; }).join('')}${ready ? `<small class="go">Return to ${esc(GIVERS[k].name)}</small>` : ''}</span></button>`;
+      return `<button class="qt${ready ? ' ready' : ''}" data-qt="${k}" title="${esc(GIVERS[k].name)}: ${esc(Q.title)}"><i class="portrait mini p-${k}"></i><span><b>${esc(Q.title)}</b>${Q.want.map(w => { const h = Math.min(wantHave(s, w), w.n); return `<small class="${h >= w.n ? 'ok' : ''}">${w.fish ? icon(w.fish === 'any' ? 0 : FISH_BY[w.fish].icon, 'tiny') : w.icon != null ? icon(w.icon, 'tiny') : '✿ '}${h} / ${w.n}</small>`; }).join('')}${ready ? `<small class="go">Return to ${esc(GIVERS[k].name)}</small>` : ''}</span></button>`;
     }).join('');
     const strays = V()?.strays?.() || [];
-    const all = rows + (strays.length ? `<button class="qt ready" data-qt="imp"><i class="item fork-i" style="background-position:${iconPos(ICON.fork)}"></i><span><b>${strays.length > 1 ? strays.length + ' imps have' : 'An imp has'} run off!</b><small class="go">Find ${strays.length > 1 ? 'them' : 'it'} and tap to send ${strays.length > 1 ? 'them' : 'it'} home</small></span></button>` : '');
+    const all = rows + extraRows.map(f => f(s)).join('') + (strays.length ? `<button class="qt ready" data-qt="imp"><i class="item fork-i" style="background-position:${iconPos(ICON.fork)}"></i><span><b>${strays.length > 1 ? strays.length + ' imps have' : 'An imp has'} run off!</b><small class="go">Find ${strays.length > 1 ? 'them' : 'it'} and tap to send ${strays.length > 1 ? 'them' : 'it'} home</small></span></button>` : '');
     if (all !== lastTrack) { $('quests').innerHTML = all; lastTrack = all; }
   }
   // Glides the camera to a giver: Old Tam at the end of his pier, the lord on his throne.
   function goTo(k) {
+    if (UI[k]?.goTo) return UI[k].goTo();
     const o = Wd().objects.find(q => q.place === (k === 'lord' ? 'throne' : 'pier'));
     if (!o) return;
     V().focusZone(o.zone);
@@ -246,25 +248,26 @@ export function createAngling(g) {
     if (r.rod && r.rod > S().rod) out.push(`<span>${icon(ICON.rod, 'tiny')}${RODS[r.rod].name}</span>`);
     if (r.bag) out.push(`<span>${icon(ICON.pack, 'tiny')}+${r.bag} backpack slots</span>`);
     if (r.boon) out.push(`<span class="boon">✦ +${Math.round(r.boon * 100)}% to all earnings</span>`);
+    if (r.tool && (S()[r.tool.key] || 0) < r.tool.level) out.push(`<span>${icon(r.tool.icon, 'tiny')}${esc(r.tool.name)}</span>`);
     return out.join('');
   }
   const wantRow = (s, w) => {
     const h = wantHave(s, w), f = w.fish && w.fish !== 'any' ? FISH_BY[w.fish] : null;
-    const note = f ? (s.caught[f.id] ? fishWhere(f) : `Not caught yet · ${fishWhere(f)}`) : w.fish === 'any' ? 'Anything but boots' : 'Wake and restore them';
-    return `<li class="${h >= w.n ? 'ok' : ''}">${w.fish ? icon(f ? f.icon : 0) : '<i class="item glade">✿</i>'}<span>${esc(wantLabel(w))}<small>${esc(note)}</small></span><b>${Math.min(h, w.n)} / ${w.n}</b></li>`;
+    const note = f ? (s.caught[f.id] ? fishWhere(f) : `Not ${f.kind && f.kind !== 'bug' ? 'found' : 'caught'} yet · ${fishWhere(f)}`) : w.fish === 'any' ? 'Anything but boots' : w.has ? (w.note || '') : 'Wake and restore them';
+    return `<li class="${h >= w.n ? 'ok' : ''}">${w.fish ? icon(f ? f.icon : 0) : w.icon != null ? icon(w.icon) : '<i class="item glade">✿</i>'}<span>${esc(wantLabel(w))}<small>${esc(note)}</small></span><b>${Math.min(h, w.n)} / ${w.n}</b></li>`;
   };
   function talk(k, said = null, got = null) {
-    const s = S(), G = GIVERS[k], q = questState(s, k), Q = questOf(s, k), ready = q.taken && questReady(s, k);
-    if (k === 'fisher') jot('folk');
-    const line = said ?? (!q.taken ? Q.ask : ready ? READY[k] : WAITING[k][Math.floor(Math.random() * WAITING[k].length)]);
-    const gotHTML = got ? `<div class="got">You received: ${[got.seeds ? `<span>${SEED}${fmt(got.seeds)}</span>` : '', got.rod ? `<span>${icon(ICON.rod, 'tiny')}${got.rod}</span>` : '', got.bag ? `<span>${icon(ICON.pack, 'tiny')}+${got.bag} slots</span>` : '', got.boon ? `<span class="boon">✦ +${Math.round(got.boon * 100)}% earnings</span>` : ''].join('')}</div>` : '';
+    const s = S(), G = GIVERS[k], q = questState(s, k), Q = questOf(s, k), ready = q.taken && questReady(s, k), U = UI[k] || {}, wait = WAITING[k] || U.waiting;
+    if (k !== 'lord') jot('folk');
+    const line = said ?? (!q.taken ? Q.ask : ready ? READY[k] ?? U.ready : wait[Math.floor(Math.random() * wait.length)]);
+    const gotHTML = got ? `<div class="got">You received: ${[got.seeds ? `<span>${SEED}${fmt(got.seeds)}</span>` : '', got.rod ? `<span>${icon(ICON.rod, 'tiny')}${got.rod}</span>` : '', got.bag ? `<span>${icon(ICON.pack, 'tiny')}+${got.bag} slots</span>` : '', got.boon ? `<span class="boon">✦ +${Math.round(got.boon * 100)}% earnings</span>` : '', got.tool ? `<span>${icon(got.tool.icon, 'tiny')}${esc(got.tool.name)}</span>` : ''].join('')}</div>` : '';
     const ladder = Q.order ? '<em>order</em>' : `<em>${q.n + 1} / ${G.quests.length}</em>`;
     const quest = got ? '' : `<div class="quest${ready ? ' ready' : ''}"><h3><span>${esc(Q.title)} ${stars(Q.stars)}</span>${ladder}</h3><ul class="wants">${Q.want.map(w => wantRow(s, w)).join('')}</ul><div class="rewards"><small>Reward</small>${rewardHTML(Q.reward)}</div></div>`;
-    const sell = k === 'fisher' ? `<button class="wood" data-talk="market" data-k="fisher">${icon(ICON.pack, 'tiny')}Sell &amp; shop</button>${s.ferry ? `<button class="wood" data-talk="ferry">${icon(ICON.boat, 'tiny')}Ferry</button>` : ''}` : `<button class="wood" data-talk="lordmarket" data-k="lord">${icon(ICON.curse, 'tiny')}Sell cursed fish</button>`;
+    const sell = U.buttons ? U.buttons(s) : k === 'fisher' ? `<button class="wood" data-talk="market" data-k="fisher">${icon(ICON.pack, 'tiny')}Sell &amp; shop</button>${s.ferry ? `<button class="wood" data-talk="ferry">${icon(ICON.boat, 'tiny')}Ferry</button>` : ''}` : `<button class="wood" data-talk="lordmarket" data-k="lord">${icon(ICON.curse, 'tiny')}Sell cursed fish</button>`;
     const buttons = got ? `<button class="wood primary" data-talk="next" data-k="${k}">Anything else?</button>${sell}<button class="wood" data-talk="bye">Farewell</button>`
-      : !q.taken ? `<button class="wood primary" data-talk="accept" data-k="${k}">${k === 'lord' ? 'As you wish' : 'I\'ll do it'}</button>${sell}<button class="wood" data-talk="bye">Not now</button>`
+      : !q.taken ? `<button class="wood primary" data-talk="accept" data-k="${k}">${k === 'lord' ? 'As you wish' : U.accept || 'I\'ll do it'}</button>${sell}<button class="wood" data-talk="bye">Not now</button>`
       : ready ? `<button class="wood primary" data-talk="give" data-k="${k}">Hand it over</button>${sell}<button class="wood" data-talk="bye">Later</button>`
-      : `${sell}<button class="wood" data-talk="fish">${on ? 'Back to fishing' : 'Get my rod out'}</button><button class="wood" data-talk="bag">Backpack</button>`;
+      : `${sell}${U.idle ? U.idle(s) : `<button class="wood" data-talk="fish">${on ? 'Back to fishing' : 'Get my rod out'}</button>`}<button class="wood" data-talk="bag">Backpack</button>`;
     show('talk', `<div class="talk p-${k}"><div class="portrait p-${k}"></div><div class="talk-body"><h2>${esc(G.name)}</h2><p class="sub">${esc(G.role)}</p><p class="say">${esc(line)}</p>${gotHTML}${quest}<div class="row">${buttons}</div></div></div>`);
   }
 
@@ -273,8 +276,9 @@ export function createAngling(g) {
   function openMarket(msg = '', who = marketWho) {
     marketWho = who;
     if (who === 'lord') return openLordMarket(msg);
+    if (UI[who]?.market) return UI[who].market(msg);
     const s = S(), i0 = inc(), want = wantedFish(s), keep = questNeeds(s), worth = bagWorth(s, i0), cost = bagCost(s);
-    const rows = s.bag.map((q, i) => { const f = FISH_BY[q.id], p = priceOf(s, q, i0), k = q.id + (q.cursed ? '*' : ''), held = keep[k] ? `<small class="held">${Math.min(q.n, keep[k])} wanted for a quest</small>` : ''; return `<div class="mrow${f === want && !q.cursed ? ' hot' : ''}${q.cursed ? ' cursed' : ''}">${ic(q)}<span><b>${q.cursed ? 'Cursed ' + esc(f.name.toLowerCase()) : esc(f.name)} ×${q.n}</b>${tierTag(f)}${held}</span>${q.cursed ? '<small class="price no">"Get that thing away from me!"</small><span></span><span></span>' : `<small class="price">${SEED}${fmt(p)}${f === want ? ' <em>×2 today</em>' : ''}</small><button class="wood" data-mk="1" data-i="${i}">Sell 1</button>${q.n > 1 ? `<button class="wood" data-mk="all" data-i="${i}">All · ${fmt(p * q.n)}</button>` : '<span></span>'}`}</div>`; }).join('');
+    const rows = s.bag.map((q, i) => { if (FISH_BY[q.id].kind) return ''; const f = FISH_BY[q.id], p = priceOf(s, q, i0), k = q.id + (q.cursed ? '*' : ''), held = keep[k] ? `<small class="held">${Math.min(q.n, keep[k])} wanted for a quest</small>` : ''; return `<div class="mrow${f === want && !q.cursed ? ' hot' : ''}${q.cursed ? ' cursed' : ''}">${ic(q)}<span><b>${q.cursed ? 'Cursed ' + esc(f.name.toLowerCase()) : esc(f.name)} ×${q.n}</b>${tierTag(f)}${held}</span>${q.cursed ? '<small class="price no">"Get that thing away from me!"</small><span></span><span></span>' : `<small class="price">${SEED}${fmt(p)}${f === want ? ' <em>×2 today</em>' : ''}</small><button class="wood" data-mk="1" data-i="${i}">Sell 1</button>${q.n > 1 ? `<button class="wood" data-mk="all" data-i="${i}">All · ${fmt(p * q.n)}</button>` : '<span></span>'}`}</div>`; }).join('');
     show('market', `<div class="market-head"><i class="portrait mini p-fisher"></i><div><h2>Old Tam's market</h2><p class="sub">${msg ? esc(msg) : 'He buys anything you catch. Fish worth more as your lands earn more.'}</p></div></div>
       <div class="wanted">${icon(want.icon, 'big')}<div><b>Wanted today: ${esc(want.name)}</b><span>Old Tam pays double for it until tomorrow. ${esc(fishWhere(want))}.</span></div></div>
       ${rows ? `<div class="mrows">${rows}</div>` : '<div class="bag-info empty">Your backpack is empty. Go and catch something!</div>'}
@@ -321,16 +325,16 @@ export function createAngling(g) {
     const s = S(), i0 = inc(), q = s.bag[selected];
     const slots = Array.from({ length: s.bagSize }, (_, i) => { const it = s.bag[i]; return it ? `<button class="slot t${FISH_BY[it.id].tier}${it.cursed ? ' cursed' : ''}${i === selected ? ' sel' : ''}" data-slot="${i}" title="${it.cursed ? 'Cursed ' : ''}${esc(FISH_BY[it.id].name)}">${ic(it)}${it.n > 1 ? `<b>${it.n}</b>` : ''}</button>` : '<span class="slot empty"></span>'; }).join('');
     const baits = Object.keys(BAIT).filter(k => s.bait[k] > 0), baitRow = baits.length || Object.keys(s.tackle).length ? `<div class="traps bait">${icon(s.baitOn ? BAIT[s.baitOn].icon : ICON.bobber)}<span><b>On your hook: ${s.baitOn ? `${BAIT[s.baitOn].name} (${s.bait[s.baitOn]} left)` : 'nothing'}</b><small>${Object.keys(s.tackle).map(k => TACKLE[k].name).join(' and ') || 'No tackle yet'}${Object.keys(s.tackle).length ? ' fitted to your rod' : ''}.</small></span><div class="bag-acts">${baits.map(k => `<button class="wood${s.baitOn === k ? ' primary' : ''}" data-bait="${k}">${icon(BAIT[k].icon, 'tiny')}${s.bait[k]}</button>`).join('')}${s.baitOn ? '<button class="wood ghost" data-bait="">None</button>' : ''}</div></div>` : '';
-    const info = q ? (() => { const f = FISH_BY[q.id]; return `<div class="bag-info${q.cursed ? ' cursed' : ''}">${ic(q, 'big')}<div><b>${q.cursed ? 'Cursed ' + esc(f.name.toLowerCase()) : esc(f.name)} ${tierTag(f)}</b><span>${q.cursed ? 'It glows violet and glares at you. Old Tam won\'t touch it.' : esc(f.desc)}</span><small>${SEED}${q.cursed ? `Lord Cinderbrow pays ${fmt(priceOf(s, q, i0, 'lord'))}` : `Old Tam pays ${fmt(marketPrice(s, f, i0))}`} each · ${q.n} here · ${esc(fishWhere(f))}</small></div><div class="bag-acts"><button class="wood ghost" data-bag="release">Let ${q.n > 1 ? 'them' : 'it'} go</button></div></div>`; })()
+    const info = q ? (() => { const f = FISH_BY[q.id]; return `<div class="bag-info${q.cursed ? ' cursed' : ''}">${ic(q, 'big')}<div><b>${q.cursed ? 'Cursed ' + esc(f.name.toLowerCase()) : esc(f.name)} ${tierTag(f)}</b><span>${q.cursed ? 'It glows violet and glares at you. Old Tam won\'t touch it.' : esc(f.desc)}</span><small>${f.buyer === 'none' ? 'Bramwell can tell you what it is' : `${SEED}${q.cursed ? `Lord Cinderbrow pays ${fmt(priceOf(s, q, i0, 'lord'))}` : f.buyer ? `${f.buyer === 'pip' ? 'Pip' : 'Bramwell'} pays ${fmt(priceOf(s, q, i0, f.buyer))}` : `Old Tam pays ${fmt(marketPrice(s, f, i0))}`}`} each · ${q.n} here · ${esc(fishWhere(f))}</small></div><div class="bag-acts"><button class="wood ghost" data-bag="release">Let ${q.n > 1 ? 'them' : 'it'} go</button></div></div>`; })()
       : `<div class="bag-info empty">${s.bag.length ? 'Pick something in your backpack to look at it.' : 'Your backpack is empty. Press F, or the Fish button, and click open water to cast.'}</div>`;
     const kinds = CATCHES.filter(f => s.caught[f.id]).length;
     const dex = CATCHES.map(f => { const n = s.caught[f.id]; return `<div class="dex-f t${f.tier}${n ? ' got' : ''}${s.tank[f.id] ? ' tanked' : ''}" title="${n ? esc(`${f.name} (${TIERS[f.tier]}): ${f.desc} Caught ${n}.${s.tank[f.id] ? ' In the aquarium.' : ''}`) : esc(`Not caught yet. ${fishWhere(f)}.`)}">${icon(f.icon)}<small>${n ? esc(f.name) : '???'}</small><em>${n ? '' : esc(fishWhere(f))}</em></div>`; }).join('');
-    const quests = Object.keys(GIVERS).map(k => { const G = GIVERS[k], st = questState(s, k), Q = questOf(s, k); return `<button class="bq" data-goto="${k}"><i class="portrait mini p-${k}"></i><div><b>${esc(G.name)} ${st.taken ? stars(Q.stars) : ''}</b><small>${st.taken ? `${esc(Q.title)}: ${Q.want.map(w => `${Math.min(wantHave(s, w), w.n)}/${w.n} ${esc(wantLabel(w))}`).join(', ')}` : k === 'fisher' ? `Fishes from the pier in Sunfall Coast and buys your catch. ${Math.min(st.n, G.quests.length)} of ${G.quests.length} quests done.` : `Sits his throne in Demonreach, the isle to the north. ${Math.min(st.n, G.quests.length)} of ${G.quests.length} quests done.`}</small></div></button>`; }).join('');
+    const quests = Object.keys(GIVERS).map(k => { const G = GIVERS[k], st = questState(s, k), Q = questOf(s, k); return `<button class="bq" data-goto="${k}"><i class="portrait mini p-${k}"></i><div><b>${esc(G.name)} ${st.taken ? stars(Q.stars) : ''}</b><small>${st.taken ? `${esc(Q.title)}: ${Q.want.map(w => `${Math.min(wantHave(s, w), w.n)}/${w.n} ${esc(wantLabel(w))}`).join(', ')}` : UI[k]?.where ? UI[k].where(s, st) : k === 'fisher' ? `Fishes from the pier in Sunfall Coast and buys your catch. ${Math.min(st.n, G.quests.length)} of ${G.quests.length} quests done.` : `Sits his throne in Demonreach, the isle to the north. ${Math.min(st.n, G.quests.length)} of ${G.quests.length} quests done.`}</small></div></button>`; }).join('');
     show('bag', `<div class="bag-head">${icon(ICON.pack, 'big')}<div><h2>Backpack</h2><p class="sub">${s.bag.length} of ${s.bagSize} slots · ${RODS[s.rod].name} · up to ${STACK} of a kind per slot</p></div></div>
       <div class="bag">${slots}</div>${info}
       <div class="row"><button class="wood primary" data-goto="fisher">${SEED}Sell to Old Tam · ${fmt(bagWorth(s, i0))}</button><button class="wood" data-bag="crate" ${bagWorth(s, i0, true) ? '' : 'disabled'}>${icon(ICON.crate, 'tiny')}Sell in the crate · ${fmt(bagWorth(s, i0, true))}</button><button class="wood" data-bag="tank">${icon(ICON.bowl, 'tiny')}Aquarium · +${Math.round(tankBonus(s) * 1000) / 10}%</button></div>
       <p class="sub small">The crate takes anything, anywhere, for ${Math.round(.6 * 100)}% of Old Tam's price. It keeps back fish your quests need.</p>
-      ${baitRow}${s.ferry ? `<div class="traps">${icon(ICON.boat)}<span><b>Ferry ticket</b><small>Wynn rows you to Demonreach whenever you like.</small></span><button class="wood" data-talk="ferry">Sail</button></div>` : ''}
+      ${bagRows.map(f => f(s)).join('')}${baitRow}${s.ferry ? `<div class="traps">${icon(ICON.boat)}<span><b>Ferry ticket</b><small>Wynn rows you to Demonreach whenever you like.</small></span><button class="wood" data-talk="ferry">Sail</button></div>` : ''}
       ${s.trapsOwned ? `<div class="traps">${icon(ICON.trap)}<span><b>Fish traps</b><small>${s.traps.length} set${s.trapsOwned > s.traps.length ? ` · ${s.trapsOwned - s.traps.length} to place` : ''} · ${s.traps.reduce((a, q) => a + trapCount(s, q), 0)} fish waiting. Click a trap in the water to empty it.</small></span>${s.trapsOwned > s.traps.length ? '<button class="wood" data-bag="place">Set a trap</button>' : ''}</div>` : ''}
       <h3 class="bag-h">Catches <em>${kinds} / ${CATCHES.length}</em></h3><div class="dex">${dex}</div>
       <h3 class="bag-h">Quests</h3>${quests}`);
@@ -381,7 +385,7 @@ export function createAngling(g) {
     if (t) {
       const k = t.dataset.k, act = t.dataset.talk;
       if (act === 'bye') $('modal').close();
-      if (act === 'accept') { questState(s, k).taken = true; audio.buy(); save(); hud(); talk(k, k === 'lord' ? 'Do not disappoint me.' : 'Good luck out there. Mind the hooks.'); }
+      if (act === 'accept') { questState(s, k).taken = true; GIVERS[k].onAccept?.(s, questState(s, k)); audio.buy(); save(); hud(); talk(k, k === 'lord' ? 'Do not disappoint me.' : UI[k]?.accepted?.(s) || 'Good luck out there. Mind the hooks.'); }
       if (act === 'give') { const Q = questOf(s, k), got = turnIn(s, k, inc()); if (got) { audio.chime(); pulseSeeds(); save(); hud(); talk(k, Q.thanks, got); } }
       if (act === 'next') talk(k);
       if (act === 'back') talk(k);
@@ -412,7 +416,8 @@ export function createAngling(g) {
     get on() { return on; }, get busy() { return F.phase === 'reel' || F.phase === 'bite'; },
     get state() { return F.phase === 'idle' ? null : F; }, get marks() { return marks; },
     get shadows() { return on ? shadows : null; }, get placing() { return placing; },
-    toggle, step, pointerDown, keyDown, keyUp, hud, talk, openBag, openMarket, openTank, modalClick, tapFolk,
+    toggle, step, pointerDown, keyDown, keyUp, hud, talk, openBag, openMarket, openTank, modalClick, tapFolk, goTo,
+    addKeeper(k, ui) { UI[k] = ui; }, addRow(f) { extraRows.push(f); }, addBagRow(f) { bagRows.push(f); }, get inc() { return inc(); },
     reset() { toggle(false); selected = -1; lastTrack = ''; lastClock = ''; placing = false; shadows.length = 0; hud(); },
   };
 }
