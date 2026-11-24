@@ -2,6 +2,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"></head><body>
 <canvas id="world" tabindex="0" aria-label="A dead continent. Hold and drag to bring the land back. Drag a spirit to carry it. Right-drag or arrow keys pan; wheel or plus and minus zoom."></canvas>
 <div id="hud">
+ <div id="clock" class="clock" title="Time of day, season and weather. Some fish only bite at night, in one season, or in the rain."></div>
  <div class="seeds" title="Seeds"><span class="ico ico-seed"></span><b id="seeds">0</b><small id="rate"></small></div>
  <button class="zonechip" id="zonechip" title="Open the valley map"><span id="zone-name">Hearthfield</span><span class="bar"><i id="zone-bar"></i><u id="bloom-bar"></u></span><small id="zone-note"></small></button>
  <div class="tools"><button id="btn-map" title="The whole map (M)">Map</button><button id="btn-preview" title="Preview the whole continent restored (P). Press again to go back." aria-pressed="false">Preview</button><button id="btn-then" title="Compare then and now">Then / Now</button><button id="btn-sound" title="Sound" aria-pressed="false">Sound</button><button id="btn-menu" title="Menu">Menu</button></div>
@@ -10,7 +11,7 @@
  <div id="quests"></div>
 </div>
 <div id="fishbar" hidden></div>
-<div id="reel" hidden><div class="reel-panel"><div class="reel-top"><b id="reel-title">Something is on the line!</b></div><div class="reel-track"><div class="reel-band" id="reel-band"></div><i class="item reel-fish" id="reel-fish"></i></div><div class="reel-prog"><i id="reel-prog"></i></div><small class="reel-tip">Hold the mouse button or Space to push the green band right; let go and it drifts back. Keep the fish inside it.</small></div></div>
+<div id="reel" hidden><div class="reel-panel"><div class="reel-top"><b id="reel-title">Something is on the line!</b></div><div class="reel-track"><div class="reel-band" id="reel-band"></div><div class="reel-chest" id="reel-chest" hidden><i class="item" style="background-position:33.333% 100%"></i><b><i id="reel-chest-bar"></i></b></div><i class="item reel-fish" id="reel-fish"></i></div><div class="reel-prog"><i id="reel-prog"></i></div><small class="reel-tip">Hold the mouse button or Space to push the green band right; let go and it drifts back. Keep the fish inside it.</small></div></div>
 <div id="catch" hidden></div>
 <div id="hint" hidden></div>
 <div id="banner" aria-live="polite"><strong id="banner-title"></strong><span id="banner-sub"></span></div>
@@ -21,4 +22,4 @@
  <div class="title-actions"><button class="tbtn primary" data-title="play"><i class="tic" style="--ic:url(assets/ui/icon-play.png)"></i><span id="title-play">Continue</span></button><button class="tbtn" data-title="map"><i class="tic" style="--ic:url(assets/ui/icon-map.png)"></i>Map</button><button class="tbtn" data-title="cards"><i class="tic" style="--ic:url(assets/ui/icon-card.png)"></i>Postcards</button><button class="tbtn" data-title="journal"><i class="tic" style="--ic:url(assets/ui/icon-leaf.png)"></i>Journal</button><button class="tbtn" data-title="settings"><i class="tic" style="--ic:url(assets/ui/icon-gear.png)"></i>Settings</button></div>
 </div><div class="title-records" id="title-records"></div></div>
 <div id="loading" role="status"><strong>Little Wilds 2</strong><span>The valley is waking…</span></div>
-<script type="module" src="game.mjs?v=36"></script></body></html>
+<script type="module" src="game.mjs?v=37"></script></body></html>

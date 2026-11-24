@@ -1,9 +1,10 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=36';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=36';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=36';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=36';
-import { steer, standable, overWater, escape } from './nav.mjs?v=36';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=37';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=37';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=37';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=37';
+import { steer, standable, overWater, escape } from './nav.mjs?v=37';
+import { trapCount } from './fishing.mjs?v=37';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -739,6 +740,35 @@ export function createRenderer(canvas, world, land, images) {
     } else { ctx.fillStyle = '#e04040'; ctx.beginPath(); ctx.arc(bx, by - 2 * z, 2 * z, 0, 7); ctx.fill(); }
     if (F.phase === 'bite') questBubble(bx, by - s * .8, '!', t * 3);
   }
+  // Fish shadows, drifting under the surface while your rod is out: longer for rarer fish, a dark body and a
+  // flicking tail, fading in and out.
+  const SHADOW_LEN = [4, 4.5, 5.6, 7.2, 10];
+  function drawShadows(list, time) {
+    if (!list?.length || cam.z < .9) return;
+    const z = cam.z, t = time / 1000;
+    for (const h of list) {
+      const fade = Math.min(1, h.age / 1.2, Math.max(0, (h.life - h.age) / 1.2)), L = SHADOW_LEN[h.fish.tier] * z, x = sx(h.x), y = sy(h.y);
+      if (fade <= 0 || x < -40 || y < -40 || x > W + 40 || y > H + 40) continue;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(h.a); ctx.scale(1, .55);
+      ctx.fillStyle = `rgba(8,22,36,${.5 * fade})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, L, L * .5, 0, 0, 7); ctx.fill();
+      const flick = Math.sin(t * 7 + h.x) * .35;
+      ctx.beginPath(); ctx.moveTo(-L * .8, 0); ctx.lineTo(-L * 1.55, -L * (.45 - flick * .3)); ctx.lineTo(-L * 1.55, L * (.45 + flick * .3)); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+  // Fish traps: a wicker basket bobbing in the water, with fish tails and a count once something is inside.
+  function drawTraps(s, time) {
+    if (!s.traps?.length || cam.z < .5 || !images.items) return;
+    const z = cam.z, t = time / 1000, size = Math.max(12, 8 * z);
+    for (const tr of s.traps) {
+      const x = sx(tr.x), y = sy(tr.y); if (x < -30 || y < -30 || x > W + 30 || y > H + 30) continue;
+      const n = trapCount(s, tr), bob = Math.sin(t * 1.8 + tr.x) * .5 * z;
+      ctx.strokeStyle = 'rgba(234,246,255,.45)'; ctx.lineWidth = Math.max(1, z * .4); ctx.beginPath(); ctx.ellipse(x, y + size * .1, size * .55, size * .22, 0, 0, 7); ctx.stroke();
+      ctx.drawImage(images.items, (n ? 40 - 32 : 39 - 32) * 32, 64, 32, 32, Math.round(x - size / 2), Math.round(y - size * .75 + bob), Math.round(size), Math.round(size));
+      if (n) questBubble(x, y - size * .75, String(n), t);
+    }
+  }
   // The fishing pier, plank by plank along its line from the land out to sea: boards laid across the walkway with a
   // seam every third texel, a darker rail of pilings down each side every seven. Weathered grey with boards missing
   // until it is restored, then warm, whole wood.
@@ -1116,7 +1146,7 @@ export function createRenderer(canvas, world, land, images) {
       marks = opts.marks || {};
       updateFog(s); spawnCritters(s, time); spawnFolk(s, time);
       ctx.fillStyle = '#365568'; ctx.fillRect(0, 0, W, H);
-      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawPier(s); drawFlora(s, time, dt, opts.mouse); drawBobber(opts.fishing, time); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawLight(s, time); drawWeather(s, time, dt);
+      drawGround(land.canvas); drawWater(s, time); drawDucks(s, time / 1000, dt); drawFish(s, time / 1000, dt); drawPier(s); drawFlora(s, time, dt, opts.mouse); drawShadows(opts.shadows, time); drawTraps(s, time); drawBobber(opts.fishing, time); drawProps(s, time, dt, opts.carry); drawCritters(s, time, dt); drawLight(s, time); drawWeather(s, time, dt);
       drawParticles(dt);
       if (fogAlpha.some(a => a > 0)) { ctx.imageSmoothingEnabled = true; const drift = reduced || quality < 1 ? 0 : Math.sin(time * .00016) * 7 * cam.z; ctx.globalAlpha = .72; ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0), sy(0), TW * cam.z, TH * cam.z); ctx.globalAlpha = quality > 1 ? .5 : .35; if (quality > 1) ctx.drawImage(fogSoft, 0, 0, CW, CH, sx(0) + drift, sy(0) - drift * .5, TW * cam.z, TH * cam.z); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false; }
       if (!opts.title) drawLabels(s);

@@ -1,13 +1,15 @@
 // Fishing, played: the rod (F), casting into water, the bite, the reel, the catch, the backpack (B), Old Tam's
 // market on the pier, and the quests of Old Tam and Lord Cinderbrow. The rules are in fishing.mjs.
-import { ZONES } from './world.mjs?v=36';
-import { income } from './sim.mjs?v=36';
-import { FISH, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, isNight, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, wantedFish, bagAdd, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn } from './fishing.mjs?v=36';
+import { ZONES } from './world.mjs?v=37';
+import { income } from './sim.mjs?v=37';
+import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest } from './fishing.mjs?v=37';
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
 export const icon = (i, cls = '') => `<i class="item ${cls}" style="background-position:${iconPos(i)}"></i>`;
 const SEED = '<i class="ico ico-seed"></i>';
+// "2 minnows", "3 striped perch", "2 catfish".
+const plural = (name, n) => (n === 1 || /(fish|perch|bass|koi|salmon|trout|tang|carp|tetra)$/i.test(name) ? name : name.replace(/y$/, 'ie') + 's').toLowerCase();
 const DIFF = ['', 'Easy', 'Medium', 'Hard', 'Legendary'], stars = n => `<span class="stars s${n}" title="${DIFF[n]}">${'★'.repeat(n)}<u>${'★'.repeat(4 - n)}</u><small>${DIFF[n]}</small></span>`;
 const tierTag = f => f.junk ? '' : `<em class="tier t${f.tier}">${TIERS[f.tier]}</em>`;
 const WAITING = {
@@ -20,14 +22,15 @@ const IMP = ['The imp giggles and pokes your boot.', 'The imp sticks its tongue 
 export function createAngling(g) {
   const { $, audio, toast, show, fmt, save, jot, pulseSeeds } = g;
   const S = () => g.s(), V = () => g.view(), Wd = () => g.world();
-  let on = false, F = { phase: 'idle' }, hold = false, selected = -1, marks = {}, cardTimer = 0, tickAt = 0, lastTrack = '';
+  let on = false, F = { phase: 'idle' }, hold = false, selected = -1, marks = {}, cardTimer = 0, tickAt = 0, lastTrack = '', placing = false, shadowAt = 0, trapTap = null, lastClock = '';
+  const shadows = [];
   const inc = () => income(S());
 
   /* The rod */
   function toggle(want = !on) {
     if (want === on) return;
     on = want;
-    if (!on) { if (F.phase === 'reel') endReel(false, ''); F = { phase: 'idle' }; }
+    if (!on) { if (F.phase === 'reel') endReel(false, ''); F = { phase: 'idle' }; shadows.length = 0; placing = false; }
     document.body.classList.toggle('fishing', on);
     $('btn-fish').setAttribute('aria-pressed', on);
     $('fishbar').hidden = !on;
@@ -35,15 +38,21 @@ export function createAngling(g) {
   }
   const setBar = text => { $('fishbar').innerHTML = `${icon(ICON.rod)}<span>${text}</span><small>F to put the rod away</small>`; };
   function cast(x, y, w, now) {
-    const rod = RODS[S().rod];
-    F = { phase: 'fly', at: { x, y }, water: w, t0: now, biteAt: now + 450 + (2200 + Math.random() * 5000) * rod.bite, nibble: 0, nextNibble: now + 1200 + Math.random() * 1500 };
+    const s = S(), rod = RODS[s.rod], c = conditions(s);
+    let near = null, nd = 18; for (const h of shadows) { const d = Math.hypot(h.x - x, h.y - y); if (d < nd && !h.fleeing) { nd = d; near = h; } }
+    F = { phase: 'fly', at: { x, y }, water: w, t0: now, shadow: near, biteAt: near ? Infinity : now + 450 + (3000 + Math.random() * 6000) * rod.bite, nibble: 0, nextNibble: now + 1200 + Math.random() * 1500 };
+    for (const h of shadows) if (h !== near && Math.hypot(h.x - x, h.y - y) < 10) { h.fleeing = true; h.a = Math.atan2(h.y - y, h.x - x); } // the splash scares the others off
     audio.cast();
-    setBar(`Waiting for a bite in the ${w.kind === 'sea' ? 'sea' : w.kind}… <em>${esc(w.region)}${isNight(S()) ? ' · night' : ''}</em>`);
+    setBar(`${near ? 'A fish is coming to look' : 'Waiting for a bite'} in the ${w.kind === 'sea' ? 'sea' : w.kind}… <em>${esc(w.region)}${c.night ? ' · night' : ''}${c.rain ? ' · rain' : ''}</em>`);
   }
   function hook() {
     const s = S(), f = F.fish;
     F.phase = 'reel'; hold = false;
-    F.reel = { p: .5, target: .5, retarget: 0, b: .5 - RODS[s.rod].band / 2, bv: 0, prog: .3, w: RODS[s.rod].band };
+    if (F.shadow) { shadows.splice(shadows.indexOf(F.shadow), 1); F.shadow = null; }
+    const w0 = RODS[s.rod].band;
+    F.reel = { p: .5, target: .5, retarget: 0, b: .5 - w0 / 2, bv: 0, prog: .3, w: w0, w0, burst: 1, chest: Math.random() < .14 + RODS[s.rod].luck * .06 ? { at: .1 + Math.random() * .8, from: performance.now() + 900 + Math.random() * 2500, got: 0, done: false } : null };
+    if (F.reel.chest) F.reel.chest.until = F.reel.chest.from + 6500;
+    $('reel-chest').hidden = true; $('reel-chest').classList.remove('open');
     $('reel').hidden = false; $('reel').classList.toggle('hard', f.tier >= 3);
     $('reel-fish').style.backgroundPosition = iconPos(f.icon);
     $('reel-title').textContent = f.tier >= 4 ? 'Something huge is on the line!' : f.tier >= 3 ? 'Something strong is on the line!' : 'Something is on the line!';
@@ -54,29 +63,43 @@ export function createAngling(g) {
   function lose(text) { F = { phase: 'idle' }; audio.lost(); toast(text); setBar('Click open water to cast again'); }
   function endReel(caught, text) {
     $('reel').hidden = true; hold = false;
-    const f = F.fish;
+    const f = F.fish, chest = F.reel?.chest?.done;
     F = { phase: 'idle' };
-    if (caught) landFish(f); else if (text) lose(text);
+    if (caught) landFish(f, chest); else if (text) lose(text + (chest ? ' The chest sank with it.' : ''));
     if (on) setBar('Click open water to cast again');
   }
-  function landFish(f) {
+  let swapFish = null;
+  function landFish(f, chest = false) {
     const s = S(), first = !s.caught[f.id], worth = fishWorth(f, inc());
     s.caught[f.id] = (s.caught[f.id] || 0) + 1;
-    const kept = bagAdd(s, f.id);
-    const where = kept ? `Into your backpack · ${s.bag.length} / ${s.bagSize} slots` : 'Your backpack is full, so you let it go. Sell your catch to Old Tam to make room.';
-    audio.caught();
+    const kept = bagAdd(s, f.id), loot = chest ? openChest(s, inc()) : null;
+    const cheap = !kept && f.tier >= 3 ? s.bag.map((q, i) => [i, FISH_BY[q.id].v]).filter(([i]) => FISH_BY[s.bag[i].id].tier < f.tier).sort((a, b) => a[1] - b[1])[0]?.[0] : undefined;
+    swapFish = cheap !== undefined ? { f, slot: cheap } : null;
+    const where = kept ? `Into your backpack · ${s.bag.length} / ${s.bagSize} slots` : swapFish ? 'Your backpack is full! Make room for it?' : 'Your backpack is full, so you let it go. Sell your catch to make room.';
+    const swap = swapFish ? `<div class="swap"><button class="wood primary" data-swap="yes">Let your ${s.bag[cheap].n > 1 ? s.bag[cheap].n + ' ' : ''}${esc(plural(FISH_BY[s.bag[cheap].id].name, s.bag[cheap].n))} go</button><button class="wood" data-swap="no">Let this one go</button></div>` : '';
+    const lootHTML = loot ? `<div class="loot">${icon(ICON.chestOpen)}<span>Treasure! <b>+${fmt(loot.seeds)}</b> seeds${loot.pearl ? ' and a pearl' : ''}</span></div>` : '';
+    audio.caught(); if (loot) { audio.chime(); pulseSeeds(); }
     const c = $('catch');
-    c.innerHTML = `<div class="catch-card t${f.tier}">${first ? '<em class="new">New catch!</em>' : ''}${icon(f.icon, 'big')}${tierTag(f)}<b>${f.junk ? 'You fished up an ' : 'You caught a '}${esc(f.name.toLowerCase())}!</b><span>${esc(f.desc)}</span><small>${kept ? `${SEED} Old Tam pays ${fmt(worth)} · ` : ''}${where}</small></div>`;
+    c.innerHTML = `<div class="catch-card t${f.tier}">${first ? '<em class="new">New catch!</em>' : ''}${icon(f.icon, 'big')}${tierTag(f)}<b>${f.junk ? 'You fished up an ' : 'You caught a '}${esc(f.name.toLowerCase())}!</b><span>${esc(f.desc)}</span><small>${kept ? `${SEED} Old Tam pays ${fmt(worth)} · ` : ''}${where}</small>${lootHTML}${swap}</div>`;
     c.hidden = false; c.classList.remove('show'); void c.offsetWidth; c.classList.add('show');
-    clearTimeout(cardTimer); cardTimer = setTimeout(() => c.classList.remove('show'), f.tier >= 4 ? 5000 : 3400);
+    clearTimeout(cardTimer); if (!swapFish) cardTimer = setTimeout(() => c.classList.remove('show'), f.tier >= 4 || loot ? 5000 : 3400);
     jot('fish:' + f.id); save(); hud();
   }
 
   /* The reel: hold to push the green band right, let go and it drifts back. Keep the fish inside it. */
   function stepReel(dt, now) {
     const r = F.reel, f = F.fish, h = f.hard;
-    if (now > r.retarget) { r.target = Math.random(); r.retarget = now + (1500 - h * 1000) * (.4 + Math.random() * .8); }
-    const sp = .18 + h * .95, d = r.target - r.p;
+    // How it fights: smooth swimmers wander, darters jump in bursts, sinkers hang back and floaters pull ahead;
+    // mixed fish change style every couple of seconds.
+    const mv = f.move === 'mixed' ? ['smooth', 'dart', 'sink', 'float'][Math.floor(now / 2200) % 4] : f.move || 'smooth';
+    if (now > r.retarget) {
+      const q = Math.random();
+      r.target = mv === 'sink' ? q * q * .8 : mv === 'float' ? 1 - q * q * .8 : q;
+      r.retarget = now + (mv === 'dart' ? (600 - h * 300) * (.5 + Math.random()) : (1500 - h * 1000) * (.4 + Math.random() * .8));
+      r.burst = mv === 'dart' ? 1.9 : 1;
+    }
+    if (f.tier >= 4) { r.w = r.w0 * (1 - .3 * Math.max(0, Math.min(1, r.prog))); $('reel-band').style.width = r.w * 100 + '%'; } // a legend fights harder as it tires
+    const sp = (.18 + h * .95) * r.burst, d = r.target - r.p;
     r.p += Math.sign(d) * Math.min(Math.abs(d), sp * dt) + (Math.random() - .5) * h * .03;
     r.p = Math.max(.02, Math.min(.98, r.p));
     r.bv += (hold ? 2.6 : -2.2) * dt; r.bv = Math.max(-1.2, Math.min(1.2, r.bv)); r.b += r.bv * dt;
@@ -87,17 +110,54 @@ export function createAngling(g) {
     $('reel-band').style.left = r.b * 100 + '%'; $('reel-band').classList.toggle('on', inside);
     $('reel-fish').style.left = r.p * 100 + '%'; $('reel-prog').style.width = Math.max(0, Math.min(1, r.prog)) * 100 + '%';
     $('reel').classList.toggle('slipping', !inside);
+    const C = r.chest;
+    if (C && !C.done && now > C.from && now < C.until) {
+      if (r.b <= C.at && C.at <= r.b + r.w) C.got += dt;
+      if (C.got >= 1.3) { C.done = true; $('reel-chest').classList.add('open'); audio.chime(); }
+      $('reel-chest').hidden = false; $('reel-chest').style.left = C.at * 100 + '%'; $('reel-chest-bar').style.width = Math.min(1, C.got / 1.3) * 100 + '%';
+      $('reel-chest').classList.toggle('held', r.b <= C.at && C.at <= r.b + r.w);
+    } else if (C && !C.done && now >= C.until) $('reel-chest').hidden = true;
     if (r.prog >= 1) endReel(true);
     else if (r.prog <= 0) endReel(false, 'The line went slack. It got away!');
   }
+  // Fish shadows: while your rod is out, the shapes of fish drift through the water near you, bigger for rarer
+  // fish. Cast close to one and it comes to your bobber.
+  function stepShadows(now, dt) {
+    const v = V(), s = S();
+    if (!on || v.cam.z < .9) { shadows.length = 0; return; }
+    const hw = innerWidth / v.cam.z / 2 + 30, hh = innerHeight / v.cam.z / 2 + 30;
+    for (let i = shadows.length - 1; i >= 0; i--) { const h = shadows[i]; h.age += dt; if (h !== F.shadow && (h.age > h.life || Math.abs(h.x - v.cam.x) > hw || Math.abs(h.y - v.cam.y) > hh)) shadows.splice(i, 1); }
+    if (shadows.length < 7 && now > shadowAt) {
+      shadowAt = now + 350;
+      for (let k = 0; k < 6; k++) {
+        const p = v.toWorld(Math.random() * innerWidth, 80 + Math.random() * (innerHeight - 200)), w = waterAt(s, Wd(), p.x, p.y);
+        if (!w || w.asleep || !shadows.every(h => Math.hypot(h.x - p.x, h.y - p.y) > 26)) continue;
+        shadows.push({ x: p.x, y: p.y, fish: rollCatch(w.kind, w.region, s.rod, conditions(s)), a: Math.random() * 6.283, sp: 1.5 + Math.random() * 3, age: 0, life: 16 + Math.random() * 22 });
+        break;
+      }
+    }
+    for (const h of shadows) {
+      if (h === F.shadow) continue;
+      if (h.fleeing) { h.age = Math.max(h.age, h.life - 1.2); }
+      h.a += (Math.random() - .5) * dt * 1.6;
+      const sp = h.fleeing ? 14 : h.sp, nx = h.x + Math.cos(h.a) * sp * dt, ny = h.y + Math.sin(h.a) * sp * dt;
+      if (waterAt(s, Wd(), nx, ny)) { h.x = nx; h.y = ny; } else h.a += Math.PI * (.6 + Math.random() * .6);
+    }
+  }
   function step(now, dt) {
+    stepShadows(now, dt);
     if (F.phase === 'idle') return;
     if (F.phase === 'fly' && now - F.t0 > 450) { F.phase = 'wait'; audio.nibble(); }
     if (F.phase === 'wait') {
       if (now > F.nextNibble && now < F.biteAt - 500) { F.nibble = now + 260; F.nextNibble = now + 1400 + Math.random() * 2600; audio.nibble(); }
-      if (now >= F.biteAt) { const s = S(); F.phase = 'bite'; F.biteEnd = now + 1050 + RODS[s.rod].luck * 200; F.fish = rollCatch(F.water.kind, F.water.region, s.rod, isNight(s)); audio.bite(); setBar('<b class="strike">A bite! Click or press Space!</b>'); }
+      if (F.shadow) { // the shadow swims over, circles once, then bites
+        const h = F.shadow, d = Math.hypot(F.at.x - h.x, F.at.y - h.y);
+        if (d > 2) { h.a = Math.atan2(F.at.y - h.y, F.at.x - h.x); h.x += Math.cos(h.a) * Math.min(d, 7 * dt); h.y += Math.sin(h.a) * Math.min(d, 7 * dt); }
+        else if (F.biteAt === Infinity) F.biteAt = now + 500 + Math.random() * 1500 * RODS[S().rod].bite;
+      }
+      if (now >= F.biteAt) { const s = S(); F.phase = 'bite'; F.biteEnd = now + 1050 + RODS[s.rod].luck * 200; F.fish = F.shadow ? F.shadow.fish : rollCatch(F.water.kind, F.water.region, s.rod, conditions(s)); audio.bite(); setBar('<b class="strike">A bite! Click or press Space!</b>'); }
     }
-    if (F.phase === 'bite' && now > F.biteEnd) lose('Too slow! Strike as soon as the bobber dips.');
+    if (F.phase === 'bite' && now > F.biteEnd) { if (F.shadow) { F.shadow.fleeing = true; F.shadow = null; } lose('Too slow! Strike as soon as the bobber dips.'); }
     if (F.phase === 'reel') stepReel(dt, now);
   }
 
@@ -105,11 +165,14 @@ export function createAngling(g) {
   function pointerDown(e, now) {
     if (F.phase === 'bite') { hook(); return true; }
     if (F.phase === 'reel') { hold = true; return true; }
-    if (!on) return false;
-    const v = V(), p = v.toWorld(e.clientX, e.clientY), w = waterAt(S(), Wd(), p.x, p.y);
+    const s = S(), v = V(), p = v.toWorld(e.clientX, e.clientY);
+    if (v.cam.z >= .5) { const tr = s.traps.find(q => Math.hypot(q.x - p.x, q.y - p.y + 3) < Math.max(6, 14 / v.cam.z)); if (tr) { tapTrap(tr, now); return true; } }
+    if (!on && !placing) return false;
+    const w = waterAt(s, Wd(), p.x, p.y);
     if (!w) return false;
-    if (v.cam.z < .9) { toast('Zoom in closer to cast.'); return true; }
+    if (v.cam.z < .9) { toast(placing ? 'Zoom in closer to set your trap.' : 'Zoom in closer to cast.'); return true; }
     if (w.asleep) { toast(`${ZONES[w.zone].name} is asleep. Wake it to fish its waters.`); return true; }
+    if (placing) { s.traps.push({ x: p.x, y: p.y, kind: w.kind, region: w.region, t: s.age || 0 }); placing = false; audio.cast(); toast(`Trap set in the ${w.kind}. It catches a fish every four minutes, up to five, even while you are away.`); if (on) setBar('Click open water to cast'); else $('fishbar').hidden = true; save(); return true; }
     cast(p.x, p.y, w, now); return true;
   }
   function keyDown(e) {
@@ -122,14 +185,39 @@ export function createAngling(g) {
   function keyUp(e) { if (e.code === 'Space') hold = false; }
   $('reel').addEventListener('pointerdown', e => { e.preventDefault(); hold = true; });
   addEventListener('pointerup', () => { hold = false; }); addEventListener('pointercancel', () => { hold = false; }); addEventListener('blur', () => { hold = false; });
-  $('catch').addEventListener('click', () => $('catch').classList.remove('show'));
+  $('catch').addEventListener('click', e => {
+    const b = e.target.closest('[data-swap]'), s = S();
+    if (b && swapFish && b.dataset.swap === 'yes') { const q = s.bag[swapFish.slot]; s.bag.splice(swapFish.slot, 1); bagAdd(s, swapFish.f.id); toast(`Let the ${FISH_BY[q.id].name.toLowerCase()} go. The ${swapFish.f.name.toLowerCase()} is in your backpack.`); save(); hud(); }
+    else if (b && swapFish) toast(`The ${swapFish.f.name.toLowerCase()} slips back into the water.`);
+    swapFish = null; $('catch').classList.remove('show');
+  });
+
+  /* Fish traps */
+  function tapTrap(tr, now) {
+    const s = S(), n = trapCount(s, tr);
+    if (n > 0) {
+      const got = emptyTrap(s, tr);
+      if (!got.length) { toast('Your backpack is full. Sell some fish, then empty the trap.'); return; }
+      const names = {}; for (const f of got) names[f.name] = (names[f.name] || 0) + 1;
+      for (const f of got) jot('fish:' + f.id);
+      audio.caught(); toast(`From the trap: ${Object.entries(names).map(([k, c]) => `${c} ${plural(k, c)}`).join(', ')}${got.length < n ? ' (your backpack is full)' : ''}.`); save(); hud(); return;
+    }
+    if (trapTap === tr && now - tr.tapped < 3000) { s.traps.splice(s.traps.indexOf(tr), 1); trapTap = null; toast('You pick the trap up. Set it somewhere new from your backpack.'); save(); return; }
+    const left = Math.ceil(TRAP.every - ((s.age || 0) - tr.t) % TRAP.every); trapTap = tr; tr.tapped = now;
+    toast(`Nothing yet. The next fish in about ${left >= 60 ? Math.ceil(left / 60) + ' min' : left + ' s'}. Click again to pick the trap up.`);
+  }
+  function placeTrap() { const s = S(); if (s.trapsOwned <= s.traps.length) return; placing = true; $('modal').close(); $('fishbar').hidden = false; setBar('Click open water to set your trap'); }
 
   /* The HUD: bag count, quest markers and the quest tracker. */
   function hud() {
     const s = S(); if (!s) return;
     $('bag-count').textContent = `${s.bag.length}/${s.bagSize}`;
+    const c = clockOf(s), season = seasonNow(s), m = Math.floor(c.left / 60), sec = String(c.left % 60).padStart(2, '0');
+    const clock = `${icon(c.night ? ICON.moon : ICON.sun)}<span><b>${c.night ? 'Night' : 'Day'}</b><small>${c.night ? 'Dawn' : 'Nightfall'} in ${m}:${sec} · ${season[0].toUpperCase() + season.slice(1)}${s.wx?.kind === 'rain' ? ' · rain' : s.wx?.kind === 'snow' ? ' · snow' : ''}</small></span>`;
+    if (clock !== lastClock) { $('clock').innerHTML = clock; $('clock').classList.toggle('night', c.night); lastClock = clock; }
     $('btn-bag').classList.toggle('full', s.bag.length >= s.bagSize);
     marks = { fisher: questMark(s, 'fisher'), lord: questMark(s, 'lord') };
+    if (placing && !$('modal').open) $('fishbar').hidden = false;
     const rows = Object.keys(GIVERS).filter(k => questState(s, k).taken).map(k => {
       const Q = questOf(s, k), ready = questReady(s, k);
       return `<button class="qt${ready ? ' ready' : ''}" data-qt="${k}" title="${esc(GIVERS[k].name)}: ${esc(Q.title)}"><i class="portrait mini p-${k}"></i><span><b>${esc(Q.title)}</b>${Q.want.map(w => { const h = Math.min(wantHave(s, w), w.n); return `<small class="${h >= w.n ? 'ok' : ''}">${w.fish ? icon(w.fish === 'any' ? 0 : FISH_BY[w.fish].icon, 'tiny') : '✿ '}${h} / ${w.n}</small>`; }).join('')}${ready ? `<small class="go">Return to ${esc(GIVERS[k].name)}</small>` : ''}</span></button>`;
@@ -181,8 +269,18 @@ export function createAngling(g) {
     show('market', `<div class="market-head"><i class="portrait mini p-fisher"></i><div><h2>Old Tam's market</h2><p class="sub">${msg ? esc(msg) : 'He buys anything you catch. Fish worth more as your lands earn more.'}</p></div></div>
       <div class="wanted">${icon(want.icon, 'big')}<div><b>Wanted today: ${esc(want.name)}</b><span>Old Tam pays double for it until tomorrow. ${esc(fishWhere(want))}.</span></div></div>
       ${rows ? `<div class="mrows">${rows}</div>` : '<div class="bag-info empty">Your backpack is empty. Go and catch something!</div>'}
-      <div class="row"><button class="wood primary" data-mk="everything" ${worth ? '' : 'disabled'}>Sell everything · ${fmt(worth)}</button><button class="wood" data-mk="grow" ${s.bagSize >= BAG_MAX || s.seeds < cost ? 'disabled' : ''}>${s.bagSize >= BAG_MAX ? 'Backpack at its biggest' : `Bigger backpack (+4) · ${fmt(cost)}`}</button><button class="wood" data-talk="back" data-k="fisher">Back</button></div>
+      <div class="row"><button class="wood primary" data-mk="everything" ${worth ? '' : 'disabled'}>Sell everything · ${fmt(worth)}</button><button class="wood" data-mk="grow" ${s.bagSize >= BAG_MAX || s.seeds < cost ? 'disabled' : ''}>${s.bagSize >= BAG_MAX ? 'Backpack at its biggest' : `Bigger backpack (+4) · ${fmt(cost)}`}</button><button class="wood" data-mk="trap" ${s.trapsOwned >= TRAP.max || s.seeds < trapCost(s) ? 'disabled' : ''}>${icon(ICON.trap, 'tiny')}${s.trapsOwned >= TRAP.max ? 'All traps bought' : `Fish trap · ${fmt(trapCost(s))}`}</button><button class="wood" data-talk="tank">${icon(ICON.bowl, 'tiny')}Aquarium</button><button class="wood" data-talk="back" data-k="fisher">Back</button></div>
       <p class="sub small">Selling everything keeps back any fish an open quest still needs.</p>`);
+  }
+
+  /* The aquarium: your donated fish swim in it, and each adds to all earnings for good. */
+  function openTank() {
+    const s = S(), list = CATCHES.filter(canDonate), had = list.filter(f => s.tank[f.id]);
+    const swim = had.map((f, n) => { const k = (n * 37 % 100) / 100; return `<i class="item swim t${f.tier}" style="background-position:${iconPos(f.icon)};top:${8 + (n * 29 % 74)}%;animation-duration:${16 + k * 14}s,${2.4 + k * 2}s;animation-delay:-${(n * 7.3) % 30}s,-${k * 3}s"></i>`; }).join('');
+    const cells = list.map(f => { const inTank = s.tank[f.id], have = bagCount(s, f.id), seen = s.caught[f.id] || have || inTank; return `<div class="tc t${f.tier}${inTank ? ' in' : ''}${seen ? '' : ' unseen'}">${icon(f.icon)}<small>${seen ? esc(f.name) : '???'}</small><em>+${Math.round(TANK_BONUS[f.tier] * 1000) / 10}%</em>${inTank ? '<b class="ok">✓</b>' : have ? `<button class="wood" data-donate="${f.id}">Donate</button>` : ''}</div>`; }).join('');
+    show('tank', `<div class="bag-head">${icon(ICON.bowl, 'big')}<div><h2>Sunfall Aquarium</h2><p class="sub">Donate one of each fish. Each one here adds to all your earnings, for good: rarer fish add more. <b>+${Math.round(tankBonus(s) * 1000) / 10}%</b> of a possible +${Math.round(tankMax() * 1000) / 10}%.</p></div></div>
+      <div class="tank">${swim || '<p>The tank is empty. Catch a fish and donate it!</p>'}<span class="bubbles"></span></div>
+      <div class="tgrid">${cells}</div>`);
   }
 
   /* The backpack window. */
@@ -191,13 +289,15 @@ export function createAngling(g) {
     const slots = Array.from({ length: s.bagSize }, (_, i) => { const it = s.bag[i]; return it ? `<button class="slot t${FISH_BY[it.id].tier}${i === selected ? ' sel' : ''}" data-slot="${i}" title="${esc(FISH_BY[it.id].name)}">${icon(FISH_BY[it.id].icon)}${it.n > 1 ? `<b>${it.n}</b>` : ''}</button>` : '<span class="slot empty"></span>'; }).join('');
     const info = q ? (() => { const f = FISH_BY[q.id]; return `<div class="bag-info">${icon(f.icon, 'big')}<div><b>${esc(f.name)} ${tierTag(f)}</b><span>${esc(f.desc)}</span><small>${SEED}Old Tam pays ${fmt(marketPrice(s, f, i0))} each · ${q.n} here · ${esc(fishWhere(f))}</small></div><div class="bag-acts"><button class="wood ghost" data-bag="release">Let ${q.n > 1 ? 'them' : 'it'} go</button></div></div>`; })()
       : `<div class="bag-info empty">${s.bag.length ? 'Pick something in your backpack to look at it.' : 'Your backpack is empty. Press F, or the Fish button, and click open water to cast.'}</div>`;
-    const kinds = FISH.filter(f => s.caught[f.id]).length;
-    const dex = FISH.map(f => { const n = s.caught[f.id]; return `<div class="dex-f t${f.tier}${n ? ' got' : ''}" title="${n ? esc(`${f.name} (${TIERS[f.tier]}): ${f.desc} Caught ${n}.`) : esc(`Not caught yet. ${fishWhere(f)}.`)}">${icon(f.icon)}<small>${n ? esc(f.name) : '???'}</small></div>`; }).join('');
+    const kinds = CATCHES.filter(f => s.caught[f.id]).length;
+    const dex = CATCHES.map(f => { const n = s.caught[f.id]; return `<div class="dex-f t${f.tier}${n ? ' got' : ''}${s.tank[f.id] ? ' tanked' : ''}" title="${n ? esc(`${f.name} (${TIERS[f.tier]}): ${f.desc} Caught ${n}.${s.tank[f.id] ? ' In the aquarium.' : ''}`) : esc(`Not caught yet. ${fishWhere(f)}.`)}">${icon(f.icon)}<small>${n ? esc(f.name) : '???'}</small><em>${n ? '' : esc(fishWhere(f))}</em></div>`; }).join('');
     const quests = Object.keys(GIVERS).map(k => { const G = GIVERS[k], st = questState(s, k), Q = questOf(s, k); return `<button class="bq" data-goto="${k}"><i class="portrait mini p-${k}"></i><div><b>${esc(G.name)} ${st.taken ? stars(Q.stars) : ''}</b><small>${st.taken ? `${esc(Q.title)}: ${Q.want.map(w => `${Math.min(wantHave(s, w), w.n)}/${w.n} ${esc(wantLabel(w))}`).join(', ')}` : k === 'fisher' ? `Fishes from the pier in Sunfall Coast and buys your catch. ${Math.min(st.n, G.quests.length)} of ${G.quests.length} quests done.` : `Sits his throne in Demonreach, the isle to the north. ${Math.min(st.n, G.quests.length)} of ${G.quests.length} quests done.`}</small></div></button>`; }).join('');
     show('bag', `<div class="bag-head">${icon(ICON.pack, 'big')}<div><h2>Backpack</h2><p class="sub">${s.bag.length} of ${s.bagSize} slots · ${RODS[s.rod].name} · up to ${STACK} of a kind per slot</p></div></div>
       <div class="bag">${slots}</div>${info}
-      <div class="row"><button class="wood primary" data-goto="fisher">${SEED}Sell to Old Tam · worth ${fmt(bagWorth(s, i0))}</button></div>
-      <h3 class="bag-h">Catches <em>${kinds} / ${FISH.length}</em></h3><div class="dex">${dex}</div>
+      <div class="row"><button class="wood primary" data-goto="fisher">${SEED}Sell to Old Tam · ${fmt(bagWorth(s, i0))}</button><button class="wood" data-bag="crate" ${bagWorth(s, i0, true) ? '' : 'disabled'}>${icon(ICON.crate, 'tiny')}Sell in the crate · ${fmt(bagWorth(s, i0, true))}</button><button class="wood" data-bag="tank">${icon(ICON.bowl, 'tiny')}Aquarium · +${Math.round(tankBonus(s) * 1000) / 10}%</button></div>
+      <p class="sub small">The crate takes anything, anywhere, for ${Math.round(.6 * 100)}% of Old Tam's price. It keeps back fish your quests need.</p>
+      ${s.trapsOwned ? `<div class="traps">${icon(ICON.trap)}<span><b>Fish traps</b><small>${s.traps.length} set${s.trapsOwned > s.traps.length ? ` · ${s.trapsOwned - s.traps.length} to place` : ''} · ${s.traps.reduce((a, q) => a + trapCount(s, q), 0)} fish waiting. Click a trap in the water to empty it.</small></span>${s.trapsOwned > s.traps.length ? '<button class="wood" data-bag="place">Set a trap</button>' : ''}</div>` : ''}
+      <h3 class="bag-h">Catches <em>${kinds} / ${CATCHES.length}</em></h3><div class="dex">${dex}</div>
       <h3 class="bag-h">Quests</h3>${quests}`);
   }
   function modalClick(e) {
@@ -205,12 +305,18 @@ export function createAngling(g) {
     const slot = e.target.closest('[data-slot]'); if (slot) { selected = +slot.dataset.slot === selected ? -1 : +slot.dataset.slot; openBag(); return true; }
     const go = e.target.closest('[data-goto]'); if (go) { $('modal').close(); goTo(go.dataset.goto); return true; }
     const b = e.target.closest('[data-bag]');
+    if (b && b.dataset.bag === 'crate') { const gain = sellAll(s, inc(), true); if (gain) { audio.buy(); pulseSeeds(); toast(`Into the crate · +${fmt(gain)} seeds`); } selected = -1; save(); hud(); openBag(); return true; }
+    if (b && b.dataset.bag === 'tank') { openTank(); return true; }
+    if (b && b.dataset.bag === 'place') { placeTrap(); return true; }
+    const dn = e.target.closest('[data-donate]');
+    if (dn) { const f = FISH_BY[dn.dataset.donate]; if (donate(s, f.id)) { audio.chime(); toast(`The ${f.name.toLowerCase()} joins the aquarium · +${Math.round(TANK_BONUS[f.tier] * 1000) / 10}% to all earnings, for good.`); save(); hud(); } openTank(); return true; }
     if (b && b.dataset.bag === 'release') { s.bag.splice(selected, 1); selected = -1; toast('Back into the water it goes.'); save(); hud(); openBag(); return true; }
     const m = e.target.closest('[data-mk]');
     if (m) {
       const act = m.dataset.mk, i0 = inc(); let gain = 0, msg = '';
       if (act === '1' || act === 'all') gain = sellSlot(s, +m.dataset.i, act === '1' ? 1 : STACK, i0);
       if (act === 'everything') gain = sellAll(s, i0);
+      if (act === 'trap') { const c = trapCost(s); if (s.seeds >= c && s.trapsOwned < TRAP.max) { s.seeds -= c; s.trapsOwned++; audio.buy(); save(); placeTrap(); toast('A wicker fish trap. Click open water to set it.'); return true; } }
       if (act === 'grow') { const c = bagCost(s); if (s.seeds >= c && s.bagSize < BAG_MAX) { s.seeds -= c; s.bagSize += 4; audio.buy(); msg = 'A bigger backpack: four more slots. "Room for the big ones," he winks.'; } }
       if (gain) { audio.buy(); pulseSeeds(); msg = `Sold · +${fmt(gain)} seeds. "Pleasure doing business."`; }
       selected = -1; save(); hud(); openMarket(msg); return true;
@@ -224,6 +330,7 @@ export function createAngling(g) {
       if (act === 'next') talk(k);
       if (act === 'back') talk(k);
       if (act === 'market') openMarket();
+      if (act === 'tank') openTank();
       if (act === 'fish') { $('modal').close(); toggle(true); }
       if (act === 'bag') openBag();
       return true;
@@ -239,7 +346,8 @@ export function createAngling(g) {
   return {
     get on() { return on; }, get busy() { return F.phase === 'reel' || F.phase === 'bite'; },
     get state() { return F.phase === 'idle' ? null : F; }, get marks() { return marks; },
-    toggle, step, pointerDown, keyDown, keyUp, hud, talk, openBag, openMarket, modalClick, tapFolk,
-    reset() { toggle(false); selected = -1; lastTrack = ''; hud(); },
+    get shadows() { return on ? shadows : null; }, get placing() { return placing; },
+    toggle, step, pointerDown, keyDown, keyUp, hud, talk, openBag, openMarket, openTank, modalClick, tapFolk,
+    reset() { toggle(false); selected = -1; lastTrack = ''; lastClock = ''; placing = false; shadows.length = 0; hud(); },
   };
 }

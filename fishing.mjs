@@ -1,45 +1,54 @@
 // Fishing: what bites where, the backpack, rods, Old Tam's market, and the quests of the pier fisherman and the
 // demon lord. Rules only, no drawing: the cast, the reel and the windows live in angling.mjs.
-import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=36';
+import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=37';
 
 // Each fish: its icon (a cell of assets/items.png, sixteen to a row), its tier (1 common, 2 uncommon, 3 rare,
 // 4 legendary), base worth in seeds, how hard it fights (0 to 1), the waters it lives in, how common it is there,
 // a region it is found more in (more) or only in (region), whether it bites only at night, and the rod it needs.
 export const FISH = [
-  { id: 'minnow', name: 'Minnow', icon: 0, tier: 1, v: 6, hard: .1, waters: ['river', 'pond', 'lake'], w: 9, desc: 'Small, silver and everywhere. Bait for bigger things.' },
-  { id: 'guppy', name: 'Fantail guppy', icon: 17, tier: 1, v: 8, hard: .12, waters: ['pond', 'river'], w: 6, more: { 'Sunfall Coast': 2 }, desc: 'A pink dot with a tail far too big for it.' },
-  { id: 'bluegill', name: 'Bluegill', icon: 16, tier: 1, v: 10, hard: .16, waters: ['pond', 'lake'], w: 7, desc: 'Round, cheerful and always hungry.' },
-  { id: 'perch', name: 'Striped perch', icon: 18, tier: 1, v: 14, hard: .22, waters: ['lake', 'river'], w: 5, desc: 'Yellow with dark bars, like a little tiger of the shallows.' },
-  { id: 'trout', name: 'Brook trout', icon: 2, tier: 1, v: 18, hard: .3, waters: ['river'], w: 6, desc: 'Speckled and quick, it holds in the current of running rivers.' },
-  { id: 'bass', name: 'Sea bass', icon: 9, tier: 1, v: 22, hard: .34, waters: ['sea'], w: 8, desc: 'A strong, plain fish of the open coast.' },
-  { id: 'rainbow', name: 'Rainbow trout', icon: 27, tier: 2, v: 26, hard: .4, waters: ['river'], w: 3, more: { Frostmere: 2, Glimmerdeep: 2 }, desc: 'A pink stripe down each side. Loves cold, fast water.' },
-  { id: 'catfish', name: 'Catfish', icon: 4, tier: 2, v: 28, hard: .42, waters: ['pond', 'lake', 'river'], w: 2.6, more: { Mistfen: 3 }, desc: 'A whiskered grumbler from the mud. Mistfen is full of them.' },
-  { id: 'mudskipper', name: 'Mudskipper', icon: 19, tier: 2, v: 32, hard: .38, region: 'Mistfen', w: 3, desc: 'Half fish, half frog, all opinion. Only in the fens of Mistfen.' },
-  { id: 'tang', name: 'Sunny tang', icon: 20, tier: 2, v: 34, hard: .46, waters: ['sea'], w: 2.6, more: { 'Coral Reach': 3 }, desc: 'Blue and yellow, bright as a summer flag.' },
-  { id: 'pike', name: 'Pike', icon: 3, tier: 2, v: 35, hard: .56, waters: ['lake', 'river'], w: 2, desc: 'All teeth and temper. It likes the great lake best.' },
-  { id: 'seahorse', name: 'Seahorse', icon: 23, tier: 2, v: 38, hard: .4, waters: ['sea'], w: 1.6, more: { 'Coral Reach': 3, 'Sunfall Coast': 1.5 }, desc: 'It bobs upright and curls its tail round your finger.' },
-  { id: 'eel', name: 'Eel', icon: 5, tier: 2, v: 40, hard: .62, waters: ['river', 'sea'], w: 1.5, more: { Mistfen: 2 }, desc: 'Slippery as a rumour. Found where rivers meet the sea.' },
-  { id: 'clown', name: 'Clownfish', icon: 21, tier: 2, v: 45, hard: .44, region: 'Coral Reach', waters: ['sea', 'pond'], w: 3, desc: 'Orange and white and very proud of it. Only round Coral Reach.' },
-  { id: 'puffer', name: 'Pufferfish', icon: 10, tier: 2, v: 50, hard: .5, waters: ['sea'], w: 2, more: { 'Coral Reach': 3 }, desc: 'Puffs up when cross. Coral Reach has the most.' },
-  { id: 'carp', name: 'Golden carp', icon: 1, tier: 3, v: 60, hard: .52, waters: ['pond', 'lake'], w: 1, desc: 'A lucky fish. Folk say it grants a wish if you let it go.' },
-  { id: 'tetra', name: 'Glimmer tetra', icon: 8, tier: 3, v: 70, hard: .5, region: 'Glimmerdeep', w: 3, desc: 'It glows faintly, like the crystals of Glimmerdeep.' },
-  { id: 'capfish', name: 'Capfish', icon: 28, tier: 3, v: 70, hard: .48, region: 'Sporewood', w: 3, desc: 'A little fish wearing a spotted toadstool. Only in Sporewood.' },
-  { id: 'axolotl', name: 'Frilly axolotl', icon: 22, tier: 3, v: 72, hard: .45, waters: ['pond', 'lake'], w: .7, desc: 'Smiles at everything. Hides in still, weedy ponds.' },
-  { id: 'nightfin', name: 'Starry nightfin', icon: 26, tier: 3, v: 74, hard: .55, waters: ['river', 'lake'], w: 1.8, night: true, desc: 'Its back is speckled like the sky. Rises only after dark.' },
-  { id: 'frostfin', name: 'Frostfin', icon: 6, tier: 3, v: 80, hard: .6, region: 'Frostmere', w: 3, desc: 'Cold-blooded even for a fish. Only bites in Frostmere.' },
-  { id: 'moonfish', name: 'Moonfish', icon: 25, tier: 3, v: 80, hard: .52, waters: ['pond', 'lake'], w: 1.6, night: true, desc: 'Pale and round as the moon it follows. Only at night.' },
-  { id: 'angler', name: 'Lantern angler', icon: 24, tier: 3, v: 85, hard: .6, waters: ['sea'], w: 1.5, night: true, desc: 'Lights its little lamp in the dark sea. Only at night.' },
-  { id: 'koi', name: 'Ember koi', icon: 7, tier: 3, v: 90, hard: .56, region: 'Ember Basin', waters: ['river', 'pond', 'lake'], w: 3, desc: 'Warm to the touch. Lives in the fresh waters of Ember Basin.' },
-  { id: 'ghost', name: 'Ghost minnow', icon: 29, tier: 4, v: 140, hard: .7, w: .3, night: true, rod: 2, desc: 'You can see right through it. Bites in any water, but only at night.' },
-  { id: 'lavafin', name: 'Lavafin', icon: 11, tier: 4, v: 160, hard: .74, region: 'Demonreach', w: 3, desc: 'Swims in the smouldering waters of Demonreach. Hot to hold.' },
-  { id: 'salmon', name: 'King salmon', icon: 30, tier: 4, v: 220, hard: .82, waters: ['river'], w: .25, rod: 3, desc: 'The king of the rivers, crown and all. Needs an Ashwood rod or better.' },
-  { id: 'dragon', name: 'Dragon koi', icon: 31, tier: 4, v: 500, hard: .9, waters: ['lake'], w: .14, rod: 4, desc: 'An ancient koi of the great lake. Only a Demonbone rod can hold it.' },
-  { id: 'boot', name: 'Old boot', icon: 15, tier: 0, v: 1, hard: .05, w: 1.3, junk: true, desc: 'Not a fish. Someone, somewhere, is missing it.' },
+  { id: 'minnow', move: 'smooth', name: 'Minnow', icon: 0, tier: 1, v: 6, hard: .1, waters: ['river', 'pond', 'lake'], w: 9, desc: 'Small, silver and everywhere. Bait for bigger things.' },
+  { id: 'guppy', move: 'dart', name: 'Fantail guppy', icon: 17, tier: 1, v: 8, hard: .12, waters: ['pond', 'river'], w: 6, more: { 'Sunfall Coast': 2 }, desc: 'A pink dot with a tail far too big for it.' },
+  { id: 'bluegill', move: 'smooth', name: 'Bluegill', icon: 16, tier: 1, v: 10, hard: .16, waters: ['pond', 'lake'], w: 7, desc: 'Round, cheerful and always hungry.' },
+  { id: 'perch', move: 'smooth', name: 'Striped perch', icon: 18, tier: 1, v: 14, hard: .22, waters: ['lake', 'river'], w: 5, desc: 'Yellow with dark bars, like a little tiger of the shallows.' },
+  { id: 'trout', move: 'dart', name: 'Brook trout', icon: 2, tier: 1, v: 18, hard: .3, waters: ['river'], w: 6, desc: 'Speckled and quick, it holds in the current of running rivers.' },
+  { id: 'bass', move: 'sink', name: 'Sea bass', icon: 9, tier: 1, v: 22, hard: .34, waters: ['sea'], w: 8, desc: 'A strong, plain fish of the open coast.' },
+  { id: 'rainbow', move: 'dart', name: 'Rainbow trout', icon: 27, tier: 2, v: 26, hard: .4, waters: ['river'], w: 3, more: { Frostmere: 2, Glimmerdeep: 2 }, desc: 'A pink stripe down each side. Loves cold, fast water.' },
+  { id: 'catfish', move: 'sink', name: 'Catfish', icon: 4, tier: 2, v: 28, hard: .42, waters: ['pond', 'lake', 'river'], w: 2.6, more: { Mistfen: 3 }, desc: 'A whiskered grumbler from the mud. Mistfen is full of them.' },
+  { id: 'mudskipper', move: 'dart', name: 'Mudskipper', icon: 19, tier: 2, v: 32, hard: .38, region: 'Mistfen', w: 3, desc: 'Half fish, half frog, all opinion. Only in the fens of Mistfen.' },
+  { id: 'tang', move: 'float', name: 'Sunny tang', icon: 20, tier: 2, v: 34, hard: .46, waters: ['sea'], w: 2.6, more: { 'Coral Reach': 3 }, desc: 'Blue and yellow, bright as a summer flag.' },
+  { id: 'pike', move: 'dart', name: 'Pike', icon: 3, tier: 2, v: 35, hard: .56, waters: ['lake', 'river'], w: 2, desc: 'All teeth and temper. It likes the great lake best.' },
+  { id: 'seahorse', move: 'float', name: 'Seahorse', icon: 23, tier: 2, v: 38, hard: .4, waters: ['sea'], w: 1.6, more: { 'Coral Reach': 3, 'Sunfall Coast': 1.5 }, desc: 'It bobs upright and curls its tail round your finger.' },
+  { id: 'eel', move: 'mixed', name: 'Eel', icon: 5, tier: 2, v: 40, hard: .62, waters: ['river', 'sea'], w: 1.5, more: { Mistfen: 2 }, desc: 'Slippery as a rumour. Found where rivers meet the sea.' },
+  { id: 'clown', move: 'smooth', name: 'Clownfish', icon: 21, tier: 2, v: 45, hard: .44, region: 'Coral Reach', waters: ['sea', 'pond'], w: 3, desc: 'Orange and white and very proud of it. Only round Coral Reach.' },
+  { id: 'puffer', move: 'float', name: 'Pufferfish', icon: 10, tier: 2, v: 50, hard: .5, waters: ['sea'], w: 2, more: { 'Coral Reach': 3 }, desc: 'Puffs up when cross. Coral Reach has the most.' },
+  { id: 'carp', move: 'smooth', name: 'Golden carp', icon: 1, tier: 3, v: 60, hard: .52, waters: ['pond', 'lake'], w: 1, desc: 'A lucky fish. Folk say it grants a wish if you let it go.' },
+  { id: 'tetra', move: 'dart', name: 'Glimmer tetra', icon: 8, tier: 3, v: 70, hard: .5, region: 'Glimmerdeep', w: 3, desc: 'It glows faintly, like the crystals of Glimmerdeep.' },
+  { id: 'capfish', move: 'float', name: 'Capfish', icon: 28, tier: 3, v: 70, hard: .48, region: 'Sporewood', w: 3, desc: 'A little fish wearing a spotted toadstool. Only in Sporewood.' },
+  { id: 'axolotl', move: 'sink', name: 'Frilly axolotl', icon: 22, tier: 3, v: 72, hard: .45, waters: ['pond', 'lake'], w: .7, desc: 'Smiles at everything. Hides in still, weedy ponds.' },
+  { id: 'nightfin', move: 'mixed', name: 'Starry nightfin', icon: 26, tier: 3, v: 74, hard: .55, waters: ['river', 'lake'], w: 1.8, night: true, desc: 'Its back is speckled like the sky. Rises only after dark.' },
+  { id: 'frostfin', move: 'sink', name: 'Frostfin', icon: 6, tier: 3, v: 80, hard: .6, region: 'Frostmere', w: 3, desc: 'Cold-blooded even for a fish. Only bites in Frostmere.' },
+  { id: 'moonfish', move: 'float', name: 'Moonfish', icon: 25, tier: 3, v: 80, hard: .52, waters: ['pond', 'lake'], w: 1.6, night: true, desc: 'Pale and round as the moon it follows. Only at night.' },
+  { id: 'angler', move: 'sink', name: 'Lantern angler', icon: 24, tier: 3, v: 85, hard: .6, waters: ['sea'], w: 1.5, night: true, desc: 'Lights its little lamp in the dark sea. Only at night.' },
+  { id: 'koi', move: 'mixed', name: 'Ember koi', icon: 7, tier: 3, v: 90, hard: .56, region: 'Ember Basin', waters: ['river', 'pond', 'lake'], w: 3, desc: 'Warm to the touch. Lives in the fresh waters of Ember Basin.' },
+  { id: 'ghost', move: 'dart', name: 'Ghost minnow', icon: 29, tier: 4, v: 140, hard: .7, w: .3, night: true, rod: 2, desc: 'You can see right through it. Bites in any water, but only at night.' },
+  { id: 'lavafin', move: 'mixed', name: 'Lavafin', icon: 11, tier: 4, v: 160, hard: .74, region: 'Demonreach', w: 3, desc: 'Swims in the smouldering waters of Demonreach. Hot to hold.' },
+  { id: 'salmon', move: 'mixed', name: 'King salmon', icon: 30, tier: 4, v: 220, hard: .82, waters: ['river'], w: .25, rod: 3, desc: 'The king of the rivers, crown and all. Needs an Ashwood rod or better.' },
+  { id: 'dragon', move: 'mixed', name: 'Dragon koi', icon: 31, tier: 4, v: 500, hard: .9, waters: ['lake'], w: .14, rod: 4, desc: 'An ancient koi of the great lake. Only a Demonbone rod can hold it.' },
+  // Fish of a season, or of the rain.
+  { id: 'blossom', move: 'float', name: 'Blossom carp', icon: 32, tier: 2, v: 42, hard: .4, waters: ['pond', 'lake'], w: 2.6, season: 'spring', desc: 'Petals stick to it all spring long. Only in spring.' },
+  { id: 'sunfish', move: 'smooth', name: 'Sunfish', icon: 33, tier: 2, v: 36, hard: .36, waters: ['pond', 'lake', 'river'], w: 3, season: 'summer', desc: 'Warm and golden, it basks near the surface. Only in summer.' },
+  { id: 'leaftail', move: 'dart', name: 'Maple leaftail', icon: 34, tier: 2, v: 40, hard: .46, waters: ['river'], w: 2.6, season: 'autumn', desc: 'Its tail is a maple leaf, and it drifts like one. Only in autumn.' },
+  { id: 'icefish', move: 'sink', name: 'Snowflake icefish', icon: 35, tier: 3, v: 75, hard: .55, w: 1.6, season: 'winter', desc: 'No two have the same pattern. Bites in any water, only in winter.' },
+  { id: 'raindrop', move: 'dart', name: 'Raindrop tetra', icon: 36, tier: 2, v: 46, hard: .42, waters: ['river', 'pond'], w: 3.4, rain: true, desc: 'Comes up to dance whenever it rains. Only in the rain.' },
+  { id: 'boot', move: 'sink', name: 'Old boot', icon: 15, tier: 0, v: 1, hard: .05, w: 1.3, junk: true, desc: 'Not a fish. Someone, somewhere, is missing it.' },
+  { id: 'pearl', name: 'Pearl', icon: 45, tier: 3, v: 120, treasure: true, desc: 'Found in a treasure chest snagged on your line. Old Tam pays well for these.' },
 ];
+// The fish themselves: not treasure, not boots.
+export const CATCHES = FISH.filter(f => !f.treasure);
 export const FISH_BY = Object.fromEntries(FISH.map(f => [f.id, f]));
 export const TIERS = ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'];
-export const ICON = { bobber: 12, rod: 13, pack: 14 };
-export const ITEM_COLS = 16, ITEM_ROWS = 2;
+export const ICON = { bobber: 12, rod: 13, pack: 14, chest: 37, chestOpen: 38, trap: 39, trapFull: 40, sun: 41, moon: 42, crate: 43, bowl: 44, pearl: 45, blossom: 46, leaf: 47 };
+export const ITEM_COLS = 16, ITEM_ROWS = 3;
 // Rods: a better rod brings bites sooner, gives a wider band to reel with and turns up rarer fish.
 export const RODS = [null,
   { name: 'Twig rod', bite: 1, band: .25, luck: 0 },
@@ -49,10 +58,18 @@ export const RODS = [null,
 export const STACK = 10, BAG0 = 8, BAG_MAX = 28;
 const POND_T = 178, LAKE_ZONE = LAKE.land * 9 + LAKE.glade;
 // Night falls on the same clock the land's light uses (a day is eight minutes).
-export const isNight = s => (Math.cos((s.age / 480) % 1 * 6.283) * -1 - .35) / .65 > .4;
+export const isNight = (s, age = s.age) => (Math.cos((age / 480) % 1 * 6.283) * -1 - .35) / .65 > .4;
+export function clockOf(s) {
+  const night = isNight(s); let k = 0;
+  while (k < 480 && isNight(s, s.age + k) === night) k += 2;
+  return { night, left: k };
+}
+const SEASON_LEN = 1200, SEASON_NAMES = ['spring', 'summer', 'autumn', 'winter'];
+export const seasonNow = s => SEASON_NAMES[Math.floor((s.age || 0) / SEASON_LEN) % 4];
+export const conditions = s => ({ night: isNight(s), season: seasonNow(s), rain: s.wx?.kind === 'rain' });
 
 export function fishingInit(s) {
-  s.bag ||= []; s.bagSize ||= BAG0; s.rod ||= 1; s.quests ||= {}; s.caught ||= {}; s.boon ||= 0;
+  s.bag ||= []; s.bagSize ||= BAG0; s.rod ||= 1; s.quests ||= {}; s.caught ||= {}; s.boon ||= 0; s.tank ||= {}; s.traps ||= []; s.trapsOwned ||= 0;
   s.bag = s.bag.filter(q => FISH_BY[q.id] && q.n > 0);
 }
 
@@ -78,12 +95,15 @@ export function waterAt(s, w, x, y) {
 }
 
 // What bites: weighted by the water, the region, the hour and the rod.
-export function catchTable(kind, region, rod = 1, night = false) {
+export function catchTable(kind, region, rod = 1, cond = {}, maxTier = 4) {
   const luck = RODS[rod].luck, out = [];
-  for (const f of FISH) {
+  for (const f of CATCHES) {
     if (f.region && f.region !== region) continue;
     if (f.waters && !f.waters.includes(kind)) continue;
-    if (f.night && !night) continue;
+    if (f.night && !cond.night) continue;
+    if (f.season && f.season !== cond.season) continue;
+    if (f.rain && !cond.rain) continue;
+    if (f.tier > maxTier) continue;
     if ((f.rod || 1) > rod) continue;
     let w = f.w * (f.more?.[region] || 1);
     if (f.junk) w /= 1 + luck * 1.5;
@@ -92,8 +112,8 @@ export function catchTable(kind, region, rod = 1, night = false) {
   }
   return out;
 }
-export function rollCatch(kind, region, rod = 1, night = false, r = Math.random) {
-  const t = catchTable(kind, region, rod, night), sum = t.reduce((a, [, w]) => a + w, 0);
+export function rollCatch(kind, region, rod = 1, cond = {}, r = Math.random, maxTier = 4) {
+  const t = catchTable(kind, region, rod, cond, maxTier), sum = t.reduce((a, [, w]) => a + w, 0);
   let k = r() * sum;
   for (const [f, w] of t) { k -= w; if (k <= 0) return f; }
   return t[t.length - 1][0];
@@ -102,22 +122,26 @@ export function rollCatch(kind, region, rod = 1, night = false, r = Math.random)
 const WATER_NAMES = { river: 'rivers', pond: 'ponds', lake: 'the great lake', sea: 'the sea' };
 export function fishWhere(f) {
   if (f.junk) return 'Any water, sadly';
+  if (f.treasure) return 'Treasure chests on the reel';
   const waters = f.waters ? f.waters.map(k => WATER_NAMES[k]).join(' or ') : 'any water';
   const parts = [f.region ? `${waters} in ${f.region}` : waters];
   if (f.more && !f.region) parts.push(`most in ${Object.keys(f.more).join(' and ')}`);
   if (f.night) parts.push('at night');
+  if (f.season) parts.push(`only in ${f.season}`);
+  if (f.rain) parts.push('only in the rain');
   if (f.rod > 1) parts.push(f.rod === RODS.length - 1 ? `needs the ${RODS[f.rod].name}` : `${RODS[f.rod].name} or better`);
   return parts.join(' · ').replace(/^./, c => c.toUpperCase());
 }
 // What a fish sells for grows with what the restored land earns, so a catch is worth landing all game long.
 export const fishWorth = (f, inc) => Math.max(1, Math.round(f.v * (1 + inc * .05)));
 // Old Tam's market pays double for one fish each day.
-const WANTED = FISH.filter(f => f.tier >= 1 && f.tier <= 3 && !f.night && !f.region);
+const WANTED = CATCHES.filter(f => f.tier >= 1 && f.tier <= 3 && !f.night && !f.region && !f.season && !f.rain);
 export const wantedFish = s => WANTED[Math.floor((s.age || 0) / 480 * 7.3) % WANTED.length];
 export const marketPrice = (s, f, inc) => fishWorth(f, inc) * (wantedFish(s) === f ? 2 : 1);
 
 /* The backpack: slots of up to ten of a kind. */
-export const bagCount = (s, id) => s.bag.reduce((a, q) => a + (id === 'any' ? (FISH_BY[q.id].junk ? 0 : q.n) : q.id === id ? q.n : 0), 0);
+const anyFish = f => !f.junk && !f.treasure;
+export const bagCount = (s, id) => s.bag.reduce((a, q) => a + (id === 'any' ? (anyFish(FISH_BY[q.id]) ? q.n : 0) : q.id === id ? q.n : 0), 0);
 export const bagFull = (s, id) => !s.bag.some(q => q.id === id && q.n < STACK) && s.bag.length >= s.bagSize;
 export function bagAdd(s, id) {
   const q = s.bag.find(q => q.id === id && q.n < STACK);
@@ -128,7 +152,7 @@ export function bagAdd(s, id) {
 // Takes n of a fish (for 'any', the least valuable fish first). Returns how many were taken.
 export function bagTake(s, id, n) {
   let left = n;
-  const order = s.bag.filter(q => id === 'any' ? !FISH_BY[q.id].junk : q.id === id).sort((a, b) => FISH_BY[a.id].v - FISH_BY[b.id].v || a.n - b.n);
+  const order = s.bag.filter(q => id === 'any' ? anyFish(FISH_BY[q.id]) : q.id === id).sort((a, b) => FISH_BY[a.id].v - FISH_BY[b.id].v || a.n - b.n);
   for (const q of order) { const k = Math.min(q.n, left); q.n -= k; left -= k; if (!left) break; }
   s.bag = s.bag.filter(q => q.n > 0);
   return n - left;
@@ -139,24 +163,62 @@ export function questNeeds(s) {
   for (const g in GIVERS) { if (!questState(s, g).taken) continue; for (const w of questOf(s, g).want) if (w.fish && w.fish !== 'any') need[w.fish] = (need[w.fish] || 0) + w.n; }
   return need;
 }
-export function sellSlot(s, slot, n, inc) {
+export const CRATE = .6;
+export const cratePrice = (s, f, inc) => Math.max(1, Math.round(fishWorth(f, inc) * CRATE));
+export function sellSlot(s, slot, n, inc, crate = false) {
   const q = s.bag[slot]; if (!q) return 0;
-  const k = Math.min(n, q.n), gain = marketPrice(s, FISH_BY[q.id], inc) * k;
+  const k = Math.min(n, q.n), gain = (crate ? cratePrice(s, FISH_BY[q.id], inc) : marketPrice(s, FISH_BY[q.id], inc)) * k;
   q.n -= k; if (!q.n) s.bag.splice(slot, 1);
   s.seeds += gain; s.sold = (s.sold || 0) + k; return gain;
 }
 // Sells everything except what open quests still ask for.
-export function sellAll(s, inc) {
+export function sellAll(s, inc, crate = false) {
   const keep = questNeeds(s); let gain = 0;
   for (let i = s.bag.length - 1; i >= 0; i--) {
     const q = s.bag[i], hold = Math.min(q.n, keep[q.id] || 0); keep[q.id] = (keep[q.id] || 0) - hold;
-    if (q.n > hold) gain += sellSlot(s, i, q.n - hold, inc);
+    if (q.n > hold) gain += sellSlot(s, i, q.n - hold, inc, crate);
   }
   return gain;
 }
-export const bagWorth = (s, inc) => { const keep = questNeeds(s); return s.bag.reduce((a, q) => { const hold = Math.min(q.n, keep[q.id] || 0); keep[q.id] = (keep[q.id] || 0) - hold; return a + marketPrice(s, FISH_BY[q.id], inc) * (q.n - hold); }, 0); };
+export const bagWorth = (s, inc, crate = false) => { const keep = questNeeds(s); return s.bag.reduce((a, q) => { const hold = Math.min(q.n, keep[q.id] || 0); keep[q.id] = (keep[q.id] || 0) - hold; return a + (crate ? cratePrice(s, FISH_BY[q.id], inc) : marketPrice(s, FISH_BY[q.id], inc)) * (q.n - hold); }, 0); };
 // A bigger backpack can also be bought from Old Tam: four more slots at a time.
 export const bagCost = s => Math.round(150 * Math.pow(3, (s.bagSize - BAG0) / 4));
+
+/* The aquarium in Sunfall: one of each fish, donated, adds to all earnings for good, more for rarer fish. */
+export const TANK_BONUS = [0, .01, .015, .025, .05];
+export const canDonate = f => !f.junk && !f.treasure;
+export const tankBonus = s => Object.keys(s.tank || {}).reduce((a, id) => a + (FISH_BY[id] ? TANK_BONUS[FISH_BY[id].tier] : 0), 0);
+export const tankMax = () => CATCHES.filter(canDonate).reduce((a, f) => a + TANK_BONUS[f.tier], 0);
+export function donate(s, id) {
+  const f = FISH_BY[id];
+  if (!f || !canDonate(f) || s.tank[id] || !bagCount(s, id)) return false;
+  bagTake(s, id, 1); s.tank[id] = 1; return true;
+}
+
+/* Fish traps: set in water, they catch common and uncommon fish on their own, one every four minutes, up to five. */
+export const TRAP = { every: 240, cap: 5, max: 4 };
+export const trapCost = s => Math.round(400 * Math.pow(3.2, s.trapsOwned || 0));
+export const trapCount = (s, t) => Math.min(TRAP.cap, Math.floor(((s.age || 0) - t.t) / TRAP.every));
+export function emptyTrap(s, t, r = Math.random) {
+  const n = trapCount(s, t), got = [];
+  for (let k = 0; k < n; k++) {
+    const f = rollCatch(t.kind, t.region, 1, { season: seasonNow(s) }, r, 2);
+    if (f.junk) { got.push(f); continue; }
+    if (!bagAdd(s, f.id)) break;
+    got.push(f); s.caught[f.id] = (s.caught[f.id] || 0) + 1;
+  }
+  t.t += got.length * TRAP.every;
+  if (n === TRAP.cap && got.length === n) t.t = s.age || 0; // a full trap catches nothing more until emptied
+  return got;
+}
+
+/* Treasure: a chest that drifts across the reel. Hold it in the band to keep it. */
+export function openChest(s, inc, r = Math.random) {
+  const out = { seeds: Math.round((3 + r() * 4) * (25 + inc * 3)) };
+  s.seeds += out.seeds;
+  if (r() < .35 && bagAdd(s, 'pearl')) out.pearl = true;
+  return out;
+}
 
 /* Quests. Each giver has a ladder from easy to hard (stars), then endless small orders once it runs out. */
 const DEMON = [11, 12];

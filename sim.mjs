@@ -1,8 +1,8 @@
 // Rules of restoration. No DOM: runs in the game, offline catch-up and the pacing test alike.
 // One field covers the whole continent; glades are bought outward from the middle, and one army of spirits works all of it.
-import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=36';
-import { FISH } from './fishing.mjs?v=36';
-import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=36';
+import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=37';
+import { CATCHES, tankBonus } from './fishing.mjs?v=37';
+import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=37';
 // The ground map spirits and animals walk by, rebuilt when a different set of planted trees is in play.
 export function navOf(s, w) { if (!w.nav || w.navTrees !== s.trees) { buildNav(w); for (const t of s.trees) markTree(w, t); w.navTrees = s.trees; } return w.nav; }
 
@@ -37,8 +37,8 @@ export const landIncome = (s, l) => landDone(s, l) ? 40 * Math.pow(1.6, s.levels
 export const PLACE_INCOME = { farm: 12, pier: 8, throne: 20 };
 let places = [];
 const placeIncome = s => places.reduce((a, [id, kind]) => a + (s.objHp?.[id] === 0 ? PLACE_INCOME[kind] || 0 : 0), 0);
-// The demon lord's blessings (s.boon, from his quests) add to it all.
-export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s) * (1 + (s.boon || 0));
+// The demon lord's blessings (s.boon, from his quests) and the fish in the aquarium add to it all.
+export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s) * (1 + (s.boon || 0) + tankBonus(s));
 
 // The field journal: creatures met, lands brought back and small moments. Each new entry gives a little gift of
 // seeds; each finished page adds 10% to everything the restored lands earn, for good.
@@ -50,7 +50,7 @@ export const JOURNAL = [
   { name: 'Lands', entries: [...REGIONS.map(R => ['land:' + R.name, `${R.name} restored`]), ...REGIONS.map(R => ['bloom:' + R.name, `${R.name} flourishing`])] },
   { name: 'Moments', entries: [['rainwisp', 'A riverbed filled'], ['rain', 'A passing shower'], ['snow', 'Snowfall'], ['fireflies', 'Fireflies at night'],
     ['spring', 'Spring blossom'], ['summer', 'High summer'], ['autumn', 'Autumn leaves'], ['winter', 'A winter frost'], ['favour', 'A favour for a villager'], ['pat', 'A pat for every kind of animal']] },
-  { name: 'Catches', entries: FISH.map(f => ['fish:' + f.id, f.name]) },
+  { name: 'Catches', entries: CATCHES.map(f => ['fish:' + f.id, f.name]) },
 ];
 const JOURNAL_KEYS = new Map(JOURNAL.flatMap(p => p.entries.map(([k, label]) => [k, label])));
 export const journalLabel = key => JOURNAL_KEYS.get(key);
