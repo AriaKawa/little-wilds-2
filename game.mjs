@@ -1,11 +1,11 @@
-import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=38';
-import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=38';
-import { createLand } from './land.mjs?v=38';
-import { createRenderer, GRASS_STYLES } from './render.mjs?v=38';
-import { createAudio } from './audio.mjs?v=38';
-import { spiritFace, useDeerSheet, useSheet } from './critters.mjs?v=38';
-import { fishingInit } from './fishing.mjs?v=38';
-import { createAngling } from './angling.mjs?v=38';
+import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=39';
+import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=39';
+import { createLand } from './land.mjs?v=39';
+import { createRenderer, GRASS_STYLES } from './render.mjs?v=39';
+import { createAudio } from './audio.mjs?v=39';
+import { spiritFace, useDeerSheet, useSheet } from './critters.mjs?v=39';
+import { fishingInit } from './fishing.mjs?v=39';
+import { createAngling } from './angling.mjs?v=39';
 
 const KEY = 'little-wilds-2-v2', CARDS_KEY = 'little-wilds-2-postcards', SOUND_KEY = 'little-wilds-2-muted', VOLUME_KEY = 'little-wilds-2-volume', GRASS_KEY = 'little-wilds-2-grass', MUSIC_KEY = 'little-wilds-2-music';
 const $ = id => document.getElementById(id);
@@ -443,7 +443,7 @@ addEventListener('pagehide', save);
 async function main() {
   try {
     await nextFrame();
-    const [worldImg, spirits, pets, flyers, deer, fish, fawn, folk, raincloud, places, imp, items, portraits, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=38').catch(() => null), load('assets/fish.png?v=38').catch(() => null), load('assets/fawn.png?v=38').catch(() => null), load('assets/folk.png?v=38').catch(() => null), load('assets/raincloud.png?v=38').catch(() => null), load('assets/places.png?v=38').catch(() => null), load('assets/imp.png?v=38').catch(() => null), load('assets/items.png?v=38').catch(() => null), load('assets/portraits.png?v=38').catch(() => null), ...LANDS.slice(1).map((_, n) => lookOf(n + 1) === n + 1 ? load(`assets/biome-${n + 1}.png?v=38`).catch(() => null) : null)]);
+    const [worldImg, spirits, pets, flyers, deer, fish, fawn, folk, raincloud, places, imp, items, portraits, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=39').catch(() => null), load('assets/fish.png?v=39').catch(() => null), load('assets/fawn.png?v=39').catch(() => null), load('assets/folk.png?v=39').catch(() => null), load('assets/raincloud.png?v=39').catch(() => null), load('assets/places.png?v=39').catch(() => null), load('assets/imp.png?v=39').catch(() => null), load('assets/items.png?v=39').catch(() => null), load('assets/portraits.png?v=39').catch(() => null), ...LANDS.slice(1).map((_, n) => lookOf(n + 1) === n + 1 ? load(`assets/biome-${n + 1}.png?v=39`).catch(() => null) : null)]);
     if (deer) useDeerSheet(deer, fawn);
     useSheet('imp', imp);
     images = { world: worldImg, spirits, pets, flyers, fish, folk, raincloud, places, items, portraits, biomes: [null, ...biomes] };

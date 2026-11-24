@@ -1,6 +1,6 @@
 // Fishing: what bites where, the backpack, rods, Old Tam's market, and the quests of the pier fisherman and the
 // demon lord. Rules only, no drawing: the cast, the reel and the windows live in angling.mjs.
-import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=38';
+import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=39';
 
 // Each fish: its icon (a cell of assets/items.png, sixteen to a row), its tier (1 common, 2 uncommon, 3 rare,
 // 4 legendary), base worth in seeds, how hard it fights (0 to 1), the waters it lives in, how common it is there,
