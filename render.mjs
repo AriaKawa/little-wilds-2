@@ -1,10 +1,10 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=37';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=37';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=37';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=37';
-import { steer, standable, overWater, escape } from './nav.mjs?v=37';
-import { trapCount } from './fishing.mjs?v=37';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=38';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=38';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=38';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=38';
+import { steer, standable, overWater, escape } from './nav.mjs?v=38';
+import { trapCount } from './fishing.mjs?v=38';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -643,14 +643,20 @@ export function createRenderer(canvas, world, land, images) {
   // An imp skitters from spot to spot near the throne, stops to poke at the ground, and hops when you tap it.
   function stepImp(f, dt) {
     if (f.wave > 0) { f.wave -= dt; f.pose = 'leap'; if (f.wave <= 0) f.pose = 'stand'; return; }
+    if (f.lost) { f.pose = Math.sin(performance.now() / 400 + f.x) > .6 ? 'graze' : 'stand'; return; }
+    if (!f.stray && !f.homing && !folk.some(q => q.stray || q.lost) && Math.random() < dt / 150) {
+      // only onto woken ground, where you can see it and reach it
+      for (let n = 0; n < 30 && !f.stray; n++) { const a = Math.random() * 6.283, r = 90 + Math.random() * 300, q = { x: f.home.x + Math.cos(a) * r, y: f.home.y + Math.sin(a) * r * .7 }; if (groundOk(q.x, q.y) && s_?.zones[world.zone[Math.floor(q.y / CELL) * CW + Math.floor(q.x / CELL)]]?.open) { f.goal = q; f.stray = true; f.pause = 0; } }
+      if (f.stray) api.onImp?.(f);
+    }
     if (f.pause > 0) { f.pause -= dt; return; }
     if (!f.goal) {
       for (let n = 0; n < 8 && !f.goal; n++) { const a = Math.random() * 6.283, r = 16 + Math.random() * 60, q = { x: f.home.x + Math.cos(a) * r, y: f.home.y + Math.sin(a) * r * .6 }; if (groundOk(q.x, q.y)) f.goal = q; }
       if (!f.goal) { f.pause = 1; return; }
     }
-    const dx = f.goal.x - f.x, dy = f.goal.y - f.y, d = Math.hypot(dx, dy), v = Math.min(d, 10 * dt);
-    if (d < 1) { f.goal = null; f.pause = 1 + Math.random() * 4; f.pose = Math.random() < .35 ? 'graze' : 'stand'; return; }
-    if (!groundOk(f.x + dx / d * v, f.y + dy / d * v)) { f.goal = null; return; }
+    const dx = f.goal.x - f.x, dy = f.goal.y - f.y, d = Math.hypot(dx, dy), v = Math.min(d, (f.stray || f.homing ? 24 : 10) * dt);
+    if (d < 1) { f.goal = null; if (f.stray) { f.stray = false; f.lost = true; } f.homing = false; f.pause = 1 + Math.random() * 4; f.pose = Math.random() < .35 ? 'graze' : 'stand'; return; }
+    if (!groundOk(f.x + dx / d * v, f.y + dy / d * v)) { if (f.stray) { f.stray = false; f.lost = true; } else if (f.homing) { f.x += dx / d * v; f.y += dy / d * v; return; } f.goal = null; return; }
     f.x += dx / d * v; f.y += dy / d * v; f.dist += v; f.pose = 'walk'; if (Math.abs(dx) > .3) f.dir = dx > 0 ? 1 : -1;
   }
   function stepFolk(f, dt) {
@@ -690,7 +696,8 @@ export function createRenderer(canvas, world, land, images) {
       const hop = f.wave > 0 ? Math.abs(Math.sin(f.wave * 9)) * 4 * cam.z : 0;
       ctx.globalAlpha = f.alpha; ctx.fillStyle = 'rgba(30,18,24,.28)'; ctx.beginPath(); ctx.ellipse(x, y, w * .28, h * .07, 0, 0, 7); ctx.fill();
       ctx.drawImage(art, snapX(x - w / 2), snapY(y - h - hop + cam.z * .5), w, h); ctx.globalAlpha = 1;
-      f.sx = x; f.sy = y - h / 2; f.sh = h;
+      f.sx = x; f.sy = y - h / 2; f.sh = Math.max(h, 18);
+      if (f.lost || f.stray) questBubble(x, y - h - hop, '!', tNow);
       return;
     }
     const sheet = images.folk; if (!sheet) return;
@@ -1112,6 +1119,7 @@ export function createRenderer(canvas, world, land, images) {
       return best;
     },
     startle(w) { if (w.kind === 'fish') { burst(w.o.x + w.o.dir * w.o.len * .5, w.o.y - 8, 8, ['#ffd36b', '#fff'], 16); return; } w.o.spook = 1.6; w.o.tx = w.o.x + (Math.random() - .5) * 300; w.o.ty = w.o.y + (Math.random() - .5) * 200; burst(w.o.x, w.o.y - 14, 6, ['#fff', '#ffe28a'], 14); },
+    strays() { return folk.filter(f => f.kind === 'imp' && (f.stray || f.lost)); },
     hitFolk(px, py) { for (const f of folk) if (f.sx != null && Math.abs(px - f.sx) < Math.max(14, f.sh * .35) && Math.abs(py - f.sy) < Math.max(18, f.sh * .6)) return f; return null; },
     cheer(land) { for (const f of folk) if (f.land === land) { f.wave = 3; f.pause = 3; } },
     cam, resize, focusZone, focusAll, focusLand, zoomAt, pan, toCell, toWorld,

@@ -1,6 +1,6 @@
 // Fishing: what bites where, the backpack, rods, Old Tam's market, and the quests of the pier fisherman and the
 // demon lord. Rules only, no drawing: the cast, the reel and the windows live in angling.mjs.
-import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=37';
+import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=38';
 
 // Each fish: its icon (a cell of assets/items.png, sixteen to a row), its tier (1 common, 2 uncommon, 3 rare,
 // 4 legendary), base worth in seeds, how hard it fights (0 to 1), the waters it lives in, how common it is there,
@@ -47,8 +47,9 @@ export const FISH = [
 export const CATCHES = FISH.filter(f => !f.treasure);
 export const FISH_BY = Object.fromEntries(FISH.map(f => [f.id, f]));
 export const TIERS = ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'];
-export const ICON = { bobber: 12, rod: 13, pack: 14, chest: 37, chestOpen: 38, trap: 39, trapFull: 40, sun: 41, moon: 42, crate: 43, bowl: 44, pearl: 45, blossom: 46, leaf: 47 };
-export const ITEM_COLS = 16, ITEM_ROWS = 3;
+export const ICON = { bobber: 12, rod: 13, pack: 14, chest: 37, chestOpen: 38, trap: 39, trapFull: 40, sun: 41, moon: 42, crate: 43, bowl: 44, pearl: 45, blossom: 46, leaf: 47, glow: 48, chum: 49, lure: 50, float: 51, boat: 52, ticket: 53, curse: 54, fork: 55 };
+export const ITEM_COLS = 16, ITEM_ROWS = 4;
+export const DEMON_LANDS = [11, 12];
 // Rods: a better rod brings bites sooner, gives a wider band to reel with and turns up rarer fish.
 export const RODS = [null,
   { name: 'Twig rod', bite: 1, band: .25, luck: 0 },
@@ -66,10 +67,10 @@ export function clockOf(s) {
 }
 const SEASON_LEN = 1200, SEASON_NAMES = ['spring', 'summer', 'autumn', 'winter'];
 export const seasonNow = s => SEASON_NAMES[Math.floor((s.age || 0) / SEASON_LEN) % 4];
-export const conditions = s => ({ night: isNight(s), season: seasonNow(s), rain: s.wx?.kind === 'rain' });
+export const conditions = s => ({ night: isNight(s), season: seasonNow(s), rain: s.wx?.kind === 'rain', glow: s.baitOn === 'glow' && s.bait?.glow > 0, lure: !!s.tackle?.lure });
 
 export function fishingInit(s) {
-  s.bag ||= []; s.bagSize ||= BAG0; s.rod ||= 1; s.quests ||= {}; s.caught ||= {}; s.boon ||= 0; s.tank ||= {}; s.traps ||= []; s.trapsOwned ||= 0;
+  s.bag ||= []; s.bagSize ||= BAG0; s.rod ||= 1; s.quests ||= {}; s.caught ||= {}; s.boon ||= 0; s.tank ||= {}; s.traps ||= []; s.trapsOwned ||= 0; s.bait ||= { glow: 0, chum: 0 }; s.tackle ||= {}; s.baitOn ||= '';
   s.bag = s.bag.filter(q => FISH_BY[q.id] && q.n > 0);
 }
 
@@ -90,24 +91,27 @@ export function waterAt(s, w, x, y) {
     zone = w.zone[Math.floor(y / CELL) * CW + Math.floor(x / CELL)];
     kind = 'sea';
   } else return null;
-  if (!s.zones[zone]?.open) return { kind, zone, land: ZONES[zone].land, asleep: true };
+  if (!s.zones[zone]?.open) return { kind, zone, land: ZONES[zone].land, region: LANDS[ZONES[zone].land].name, asleep: true };
   return { kind, zone, land: ZONES[zone].land, region: LANDS[ZONES[zone].land].name };
 }
 
 // What bites: weighted by the water, the region, the hour and the rod.
+// Water you may fish: in a woken glade, or anywhere round Demonreach once you have a ferry ticket.
+export const canFish = (s, w) => !!w && (!w.asleep || (!!s.ferry && DEMON_LANDS.includes(w.land)));
 export function catchTable(kind, region, rod = 1, cond = {}, maxTier = 4) {
   const luck = RODS[rod].luck, out = [];
   for (const f of CATCHES) {
     if (f.region && f.region !== region) continue;
     if (f.waters && !f.waters.includes(kind)) continue;
-    if (f.night && !cond.night) continue;
+    if (f.night && !cond.night && !cond.glow) continue;
     if (f.season && f.season !== cond.season) continue;
     if (f.rain && !cond.rain) continue;
     if (f.tier > maxTier) continue;
     if ((f.rod || 1) > rod) continue;
     let w = f.w * (f.more?.[region] || 1);
     if (f.junk) w /= 1 + luck * 1.5;
-    else if (f.tier >= 3) w *= 1 + luck;
+    else if (f.tier >= 3) w *= (1 + luck) * (cond.lure ? 1.5 : 1);
+    if (f.night && cond.glow) w *= 2;
     out.push([f, w]);
   }
   return out;
@@ -141,18 +145,18 @@ export const marketPrice = (s, f, inc) => fishWorth(f, inc) * (wantedFish(s) ===
 
 /* The backpack: slots of up to ten of a kind. */
 const anyFish = f => !f.junk && !f.treasure;
-export const bagCount = (s, id) => s.bag.reduce((a, q) => a + (id === 'any' ? (anyFish(FISH_BY[q.id]) ? q.n : 0) : q.id === id ? q.n : 0), 0);
-export const bagFull = (s, id) => !s.bag.some(q => q.id === id && q.n < STACK) && s.bag.length >= s.bagSize;
-export function bagAdd(s, id) {
-  const q = s.bag.find(q => q.id === id && q.n < STACK);
+const fits = (q, id, cursed) => !!q.cursed === !!cursed && (id === 'any' ? anyFish(FISH_BY[q.id]) : q.id === id);
+export const bagCount = (s, id, cursed = false) => s.bag.reduce((a, q) => a + (fits(q, id, cursed) ? q.n : 0), 0);
+export function bagAdd(s, id, cursed = false) {
+  const q = s.bag.find(q => q.id === id && !!q.cursed === !!cursed && q.n < STACK);
   if (q) { q.n++; return true; }
   if (s.bag.length >= s.bagSize) return false;
-  s.bag.push({ id, n: 1 }); return true;
+  s.bag.push(cursed ? { id, n: 1, cursed: true } : { id, n: 1 }); return true;
 }
 // Takes n of a fish (for 'any', the least valuable fish first). Returns how many were taken.
-export function bagTake(s, id, n) {
+export function bagTake(s, id, n, cursed = false) {
   let left = n;
-  const order = s.bag.filter(q => id === 'any' ? anyFish(FISH_BY[q.id]) : q.id === id).sort((a, b) => FISH_BY[a.id].v - FISH_BY[b.id].v || a.n - b.n);
+  const order = s.bag.filter(q => fits(q, id, cursed)).sort((a, b) => FISH_BY[a.id].v - FISH_BY[b.id].v || a.n - b.n);
   for (const q of order) { const k = Math.min(q.n, left); q.n -= k; left -= k; if (!left) break; }
   s.bag = s.bag.filter(q => q.n > 0);
   return n - left;
@@ -160,29 +164,66 @@ export function bagTake(s, id, n) {
 // Fish the open quests still need: kept back when you sell everything.
 export function questNeeds(s) {
   const need = {};
-  for (const g in GIVERS) { if (!questState(s, g).taken) continue; for (const w of questOf(s, g).want) if (w.fish && w.fish !== 'any') need[w.fish] = (need[w.fish] || 0) + w.n; }
+  for (const g in GIVERS) { if (!questState(s, g).taken) continue; for (const w of questOf(s, g).want) if (w.fish && w.fish !== 'any') { const k = w.fish + (w.cursed ? '*' : ''); need[k] = (need[k] || 0) + w.n; } }
   return need;
 }
 export const CRATE = .6;
 export const cratePrice = (s, f, inc) => Math.max(1, Math.round(fishWorth(f, inc) * CRATE));
-export function sellSlot(s, slot, n, inc, crate = false) {
+export const CURSED_PRICE = 3;
+export function priceOf(s, q, inc, who = 'tam') {
+  const f = FISH_BY[q.id];
+  if (who === 'lord') return q.cursed ? fishWorth(f, inc) * CURSED_PRICE : 0;
+  if (who === 'crate') return cratePrice(s, f, inc);
+  return q.cursed ? 0 : marketPrice(s, f, inc);
+}
+const buyer = who => who === true ? 'crate' : who || 'tam';
+const keyOf = q => q.id + (q.cursed ? '*' : '');
+export function sellSlot(s, slot, n, inc, who = 'tam') {
   const q = s.bag[slot]; if (!q) return 0;
-  const k = Math.min(n, q.n), gain = (crate ? cratePrice(s, FISH_BY[q.id], inc) : marketPrice(s, FISH_BY[q.id], inc)) * k;
+  const price = priceOf(s, q, inc, buyer(who)); if (!price) return 0;
+  const k = Math.min(n, q.n), gain = price * k;
   q.n -= k; if (!q.n) s.bag.splice(slot, 1);
   s.seeds += gain; s.sold = (s.sold || 0) + k; return gain;
 }
 // Sells everything except what open quests still ask for.
-export function sellAll(s, inc, crate = false) {
+export function sellAll(s, inc, who = 'tam') {
   const keep = questNeeds(s); let gain = 0;
   for (let i = s.bag.length - 1; i >= 0; i--) {
-    const q = s.bag[i], hold = Math.min(q.n, keep[q.id] || 0); keep[q.id] = (keep[q.id] || 0) - hold;
-    if (q.n > hold) gain += sellSlot(s, i, q.n - hold, inc, crate);
+    const q = s.bag[i], k = keyOf(q), hold = Math.min(q.n, keep[k] || 0); keep[k] = (keep[k] || 0) - hold;
+    if (q.n > hold && priceOf(s, q, inc, buyer(who))) gain += sellSlot(s, i, q.n - hold, inc, who);
   }
   return gain;
 }
-export const bagWorth = (s, inc, crate = false) => { const keep = questNeeds(s); return s.bag.reduce((a, q) => { const hold = Math.min(q.n, keep[q.id] || 0); keep[q.id] = (keep[q.id] || 0) - hold; return a + (crate ? cratePrice(s, FISH_BY[q.id], inc) : marketPrice(s, FISH_BY[q.id], inc)) * (q.n - hold); }, 0); };
+export const bagWorth = (s, inc, who = 'tam') => { const keep = questNeeds(s); return s.bag.reduce((a, q) => { const k = keyOf(q), hold = Math.min(q.n, keep[k] || 0); keep[k] = (keep[k] || 0) - hold; return a + priceOf(s, q, inc, buyer(who)) * (q.n - hold); }, 0); };
 // A bigger backpack can also be bought from Old Tam: four more slots at a time.
 export const bagCost = s => Math.round(150 * Math.pow(3, (s.bagSize - BAG0) / 4));
+
+/* Demonreach's twist: fish from its waters sometimes come up cursed. They glow, fight harder and frighten Old
+   Tam, but Lord Cinderbrow pays three times their worth for them. */
+export const CURSE_CHANCE = .3;
+export const rollCursed = (w, f, r = Math.random) => w?.region === 'Demonreach' && !f.junk && !f.treasure && r() < CURSE_CHANCE;
+
+/* Bait (a few uses, chosen before you cast) and tackle (kept for good), all sold by Old Tam. */
+export const BAIT = {
+  glow: { name: 'Glow-worm bait', icon: 48, n: 5, price: 2, desc: 'Night fish bite at any hour, and twice as often.' },
+  chum: { name: 'Chum', icon: 49, n: 5, price: 1.2, desc: 'Fish find your line twice as fast.' },
+};
+export const TACKLE = {
+  lure: { name: 'Shiny lure', icon: 50, price: 14, desc: 'Rare and legendary fish bite half again as often.' },
+  float: { name: 'Quill float', icon: 51, price: 9, desc: 'A bite lasts much longer before the fish lets go.' },
+};
+export const shopPrice = (k, inc) => questSeeds(k, inc);
+// Uses one bait if any is chosen. Returns the bait used, or ''.
+export function useBait(s) {
+  const k = s.baitOn; if (!k || !(s.bait[k] > 0)) { s.baitOn = ''; return ''; }
+  s.bait[k]--; if (!s.bait[k]) s.baitOn = '';
+  return k;
+}
+
+/* The ferry: Old Tam's cousin rows you to Demonreach, so you can fish round the isle before it is restored and
+   call on its lord. It opens once Tam trusts you (six of his quests) or four lands are restored. */
+export const ferryOpen = (s, lands) => (s.quests?.fisher?.n || 0) >= 6 || lands >= 4;
+export const ferryCost = inc => questSeeds(20, inc);
 
 /* The aquarium in Sunfall: one of each fish, donated, adds to all earnings for good, more for rarer fish. */
 export const TANK_BONUS = [0, .01, .015, .025, .05];
@@ -222,7 +263,7 @@ export function openChest(s, inc, r = Math.random) {
 
 /* Quests. Each giver has a ladder from easy to hard (stars), then endless small orders once it runs out. */
 const DEMON = [11, 12];
-const Q = (stars, title, ask, want, thanks, reward) => ({ stars, title, ask, want: want.map(([fish, n]) => ({ fish, n })), thanks, reward });
+const Q = (stars, title, ask, want, thanks, reward) => ({ stars, title, ask, want: want.map(([fish, n, cursed]) => cursed ? { fish, n, cursed } : { fish, n }), thanks, reward });
 export const GIVERS = {
   fisher: { name: 'Old Tam', role: 'the pier fisherman', portrait: 1, quests: [
     Q(1, 'First bites', 'A new face on my pier! Fish are coming back to these waters, you know. Bring me three minnows and we\'ll see if you\'ve the knack.', [['minnow', 3]], 'Ha! Fresh as morning. You\'ve the knack, all right.', { seeds: 3 }),
@@ -248,6 +289,7 @@ export const GIVERS = {
     Q(2, 'Fire from the deep', 'The lavafin swims only in MY waters. Bring me two, and I will carve you a rod from the bones of something terrible.', [['lavafin', 2]], 'Exquisite. Behold: the Demonbone rod. Try not to scream when it bites.', { seeds: 20, rod: 4 }),
     Q(3, 'A dreadful stew', 'I hunger for stew. A dreadful stew. It wants an eel, a pufferfish and a mudskipper. Do NOT ask what else goes in it.', [['eel', 1], ['puffer', 1], ['mudskipper', 1]], 'Mmm. Bubbling nicely. Here, a bigger sack. Carry my glory further.', { seeds: 25, bag: 4, boon: .05 }),
     Q(3, 'The crimson realm reborn', 'My isle lies grey and dead. Restore every glade of Demonreach so that its crimson may burn again.', [], 'LOOK at it. Crimson as a dragon\'s blush. You may consider yourself... a friend of the throne.', { seeds: 60, boon: .1 }),
+    Q(3, 'Cursed delicacies', 'Fish from my waters sometimes come up... changed. Glowing. Grumpy. Delicious. Bring me three cursed fish of any kind.', [['any', 3, true]], 'Still twitching! Exquisite. Take this, and bring me every cursed fish you find: I pay far better than that sailor of yours.', { seeds: 35, boon: .05 }),
     Q(3, 'Creatures of the dark', 'I collect things of the night. An angler, a nightfin and a moonfish. For my aquarium. It is very gloomy. I adore it.', [['angler', 1], ['nightfin', 1], ['moonfish', 1]], 'They glow so beautifully in the gloom. You have taste, for a mortal.', { seeds: 45, boon: .05 }),
     Q(3, 'My stolen boot', 'A fish stole my favourite boot. I will not elaborate. Find it.', [['boot', 1]], 'MY BOOT! The fish shall pay. Not you. You may have the gratitude of a demon, which is rarer than you think.', { seeds: 40, boon: .05 }),
     Q(4, 'A crown for a king', 'There is a salmon in your rivers that dares to wear a CROWN. Bring it to me. And a capfish, for its little hat.', [['salmon', 1], ['capfish', 1]], 'Now *I* have two crowns and a hat. As it should be.', { seeds: 90, boon: .05 }),
@@ -264,18 +306,19 @@ export function questOf(s, g) {
   const k = q.n - G.quests.length, pick = G.orders[(k * 5 + 3) % G.orders.length], want = pick === 'any' ? 6 + k % 4 : FISH_BY[pick].tier >= 3 ? 1 + k % 2 : 2 + k % 3;
   const name = pick === 'any' ? 'fish of any kind' : FISH_BY[pick].name.toLowerCase() + (want > 1 ? 's' : '');
   return g === 'lord'
-    ? { stars: 2, title: 'Tribute', ask: `My imps grow restless again. ${want} ${name}, mortal. Promptly.`, want: [{ fish: pick, n: want }], thanks: 'Acceptable. Begone, and come back with more.', reward: { seeds: 8 + k * 2 }, order: true }
+    ? k % 3 === 2 ? { stars: 3, title: 'Cursed tribute', ask: `My larder lacks a certain... glow. ${2 + k % 3} cursed fish, any kind.`, want: [{ fish: 'any', n: 2 + k % 3, cursed: true }], thanks: 'Ahh. Still warm with wickedness.', reward: { seeds: 14 + k * 2, boon: .01 }, order: true }
+    : { stars: 2, title: 'Tribute', ask: `My imps grow restless again. ${want} ${name}, mortal. Promptly.`, want: [{ fish: pick, n: want }], thanks: 'Acceptable. Begone, and come back with more.', reward: { seeds: 8 + k * 2 }, order: true }
     : { stars: 1, title: 'An order for the market', ask: `The market in Sunfall wants ${want} ${name}. Fancy the job? I'll split the takings with you.`, want: [{ fish: pick, n: want }], thanks: 'Lovely work. Here\'s your share.', reward: { seeds: 6 + k * 2 }, order: true };
 }
-export const wantHave = (s, w) => w.glades ? ZONES.filter(z => w.glades.includes(z.land) && s.zones[z.id].done).length : bagCount(s, w.fish);
-export const wantLabel = w => w.glades ? w.label : w.fish === 'any' ? 'Any fish' : FISH_BY[w.fish].name;
+export const wantHave = (s, w) => w.glades ? ZONES.filter(z => w.glades.includes(z.land) && s.zones[z.id].done).length : bagCount(s, w.fish, !!w.cursed);
+export const wantLabel = w => w.glades ? w.label : (w.cursed ? 'Cursed ' : '') + (w.fish === 'any' ? (w.cursed ? 'fish of any kind' : 'Any fish') : w.cursed ? FISH_BY[w.fish].name.toLowerCase() : FISH_BY[w.fish].name);
 export const questReady = (s, g) => questOf(s, g).want.every(w => wantHave(s, w) >= w.n);
 // Seeds as a reward scale with income, like favours do.
 export const questSeeds = (k, inc) => Math.round(k * (25 + inc * 3));
 export function turnIn(s, g, inc) {
   const Q = questOf(s, g), q = questState(s, g);
   if (!q.taken || !questReady(s, g)) return null;
-  for (const w of Q.want) if (w.fish) bagTake(s, w.fish, w.n);
+  for (const w of Q.want) if (w.fish) bagTake(s, w.fish, w.n, !!w.cursed);
   const r = Q.reward, got = { seeds: questSeeds(r.seeds || 0, inc) };
   s.seeds += got.seeds;
   if (r.rod && r.rod > s.rod) { s.rod = r.rod; got.rod = RODS[r.rod].name; }

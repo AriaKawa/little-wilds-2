@@ -77,7 +77,7 @@ body.title #hud,body.title #hint,body.title #banner,body.title #toast{opacity:0;
 .asks{margin:4px 0 8px;padding-left:18px}.asks li{font-size:14.5px;margin:3px 0}.asks em{font-style:normal;color:var(--gold)}
 @media(max-width:480px){.seeds small{display:none}}
 /* Fishing: the rod and backpack buttons, the quest tracker, the cast bar, the reel and the catch card */
-.item{display:inline-block;width:32px;height:32px;background:url(assets/items.png?v=37) 0 0/1600% 300%;image-rendering:pixelated;flex:none;vertical-align:middle}
+.item{display:inline-block;width:32px;height:32px;background:url(assets/items.png?v=38) 0 0/1600% 400%;image-rendering:pixelated;flex:none;vertical-align:middle}
 .item.tiny{width:18px;height:18px;vertical-align:-4px;margin-right:3px}.item.big{width:72px;height:72px}
 #angle{position:absolute;left:max(12px,env(safe-area-inset-left));bottom:max(12px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:7px}
 .abtn{position:relative;width:74px;padding:6px 4px 5px;display:flex;flex-direction:column;align-items:center;gap:1px;background:var(--panel);border:2px solid var(--edge);border-radius:7px;box-shadow:0 2px 0 #0005;transition:transform .12s,border-color .2s}
@@ -144,12 +144,12 @@ p.sub.small{font-size:13px;margin:8px 0 0}
 .clock .item{width:28px;height:28px}.clock b{display:block;font-size:14px;font-weight:600}.clock small{color:var(--dim);font-size:12px}.clock.night{border-color:#5b5e9a;background:rgba(30,30,58,.9)}.clock.night b{color:#c8ccff}
 .reel-chest{position:absolute;top:50%;width:34px;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;pointer-events:none;transition:filter .2s}.reel-chest[hidden]{display:none}
 .reel-chest .item{width:30px;height:30px}.reel-chest b{display:block;width:28px;height:4px;margin-top:-2px;border-radius:2px;background:#191511;overflow:hidden}.reel-chest b i{display:block;height:100%;width:0;background:var(--gold)}
-.reel-chest.held{filter:drop-shadow(0 0 4px var(--gold))}.reel-chest.open .item{background-position:40% 100%!important}.reel-chest.open b{display:none}
+.reel-chest.held{filter:drop-shadow(0 0 4px var(--gold))}.reel-chest.open .item{background-position:40% 66.667%!important}.reel-chest.open b{display:none}
 .catch-card .loot{display:flex;align-items:center;gap:6px;margin-top:6px;padding:4px 10px;border-radius:6px;background:rgba(255,211,107,.14);color:var(--gold);font-size:14px}
 .catch-card .swap{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:8px}.catch-card .swap .wood{min-width:0;min-height:34px;padding:4px 10px;font-size:13.5px;grid-row:auto;grid-column:auto}
 .traps{display:flex;align-items:center;gap:9px;margin-top:9px;padding:7px 10px;border-radius:8px;background:rgba(255,246,223,.05);border:2px solid rgba(255,246,223,.12)}.traps span{flex:1;display:flex;flex-direction:column}.traps small{color:var(--dim);font-size:13px}.traps .wood{grid-row:auto;grid-column:auto;min-width:0;min-height:34px;padding:4px 10px}
 .dex-f em{font-style:normal;font-size:10.5px;color:#8a7c66;line-height:1.1;margin-top:1px}.dex-f.tanked{background:#2f3f4a}
-.tank{position:relative;height:210px;margin:6px 0 10px;border-radius:10px;overflow:hidden;border:3px solid #6f8a96;background:#2a6f8c url(assets/aquarium.png?v=37) center/cover;image-rendering:pixelated;box-shadow:inset 0 0 30px rgba(0,20,40,.5)}
+.tank{position:relative;height:210px;margin:6px 0 10px;border-radius:10px;overflow:hidden;border:3px solid #6f8a96;background:#2a6f8c url(assets/aquarium.png?v=38) center/cover;image-rendering:pixelated;box-shadow:inset 0 0 30px rgba(0,20,40,.5)}
 .tank p{position:absolute;inset:0;display:grid;place-items:center;margin:0;color:#dff4ff;text-shadow:0 2px 0 #0008}
 .tank .swim{position:absolute;left:-8%;width:44px;height:44px;animation-name:swim,bob;animation-timing-function:linear,ease-in-out;animation-iteration-count:infinite;animation-direction:normal,alternate}
 .tank .swim.t4{width:60px;height:60px;filter:drop-shadow(0 0 6px rgba(255,200,255,.6))}
@@ -162,3 +162,15 @@ p.sub.small{font-size:13px;margin:8px 0 0}
 .tc .wood{grid-row:auto;grid-column:auto;min-width:0;min-height:28px;padding:2px 8px;font-size:12.5px;margin-top:3px}
 @media(max-width:700px){.clock{top:110px;padding:2px 8px 2px 3px}.clock .item{width:22px;height:22px}.clock b{font-size:12.5px}.clock small{font-size:11px}#quests{top:110px;width:min(180px,calc(100vw - 190px))}.tank{height:160px}
   #fishbar{top:58px;bottom:auto;left:12px;right:12px;transform:none;justify-content:center;white-space:normal;border-radius:10px}body.fishing .zonechip{visibility:hidden}}
+/* Cursed fish, bait and tackle, the ferry, runaway imps */
+.item.cursed{filter:hue-rotate(205deg) saturate(1.5) brightness(.92) drop-shadow(0 0 3px #c74dff)}
+.slot.cursed{border-color:#8a3cb0;background:#33203f}.mrow.cursed{border-color:#7a3a9c;background:#30223a}.bag-info.cursed{border-color:#7a3a9c;background:rgba(160,70,220,.1)}
+.mrow .price.no{color:#c9a6e0;font-style:italic;white-space:normal}
+.tier.curse{background:#4a1f5e;color:#e9b6ff;box-shadow:0 0 8px rgba(199,77,255,.5)}
+.catch-card.cursed{border-color:#c74dff;box-shadow:0 0 30px rgba(199,77,255,.5),0 6px 24px #000a}
+#reel.cursed .reel-panel{border-color:#8a3cb0;box-shadow:0 0 24px rgba(199,77,255,.45),0 6px 24px #000a}#reel.cursed .reel-track{background:linear-gradient(#4a2b6a,#2a1840)}#reel.cursed .reel-top b{color:#e9b6ff}
+.shop{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:6px 9px;margin-bottom:5px;border-radius:7px;background:#3a2e23;border:2px solid #5a4733}.shop.own{border-color:#4f7a38}.shop.ferry{border-color:#4f7f98}
+.shop span{display:flex;flex-direction:column}.shop span b{font-size:15px}.shop span b em{font-style:normal;color:var(--dim);font-size:13px}.shop small{color:var(--dim);font-size:13px}.shop .ok{color:var(--green);font-size:14px;white-space:nowrap}
+.shop .wood{grid-row:auto;grid-column:auto;min-width:72px;min-height:36px;padding:4px 10px}
+.traps.bait .bag-acts .wood{display:inline-flex;align-items:center;gap:2px}
+.qt .fork-i{width:34px;height:34px}

@@ -1,11 +1,13 @@
 // Fishing, played: the rod (F), casting into water, the bite, the reel, the catch, the backpack (B), Old Tam's
 // market on the pier, and the quests of Old Tam and Lord Cinderbrow. The rules are in fishing.mjs.
-import { ZONES } from './world.mjs?v=37';
-import { income } from './sim.mjs?v=37';
-import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest } from './fishing.mjs?v=37';
+import { ZONES } from './world.mjs?v=38';
+import { income } from './sim.mjs?v=38';
+import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest, canFish, rollCursed, priceOf, CURSED_PRICE, BAIT, TACKLE, shopPrice, useBait, ferryOpen, ferryCost, DEMON_LANDS } from './fishing.mjs?v=38';
+import { mapsDone } from './sim.mjs?v=38';
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
+const ic = (q, cls = '') => icon(FISH_BY[q.id].icon, (q.cursed ? 'cursed ' : '') + cls);
 export const icon = (i, cls = '') => `<i class="item ${cls}" style="background-position:${iconPos(i)}"></i>`;
 const SEED = '<i class="ico ico-seed"></i>';
 // "2 minnows", "3 striped perch", "2 catfish".
@@ -40,7 +42,8 @@ export function createAngling(g) {
   function cast(x, y, w, now) {
     const s = S(), rod = RODS[s.rod], c = conditions(s);
     let near = null, nd = 18; for (const h of shadows) { const d = Math.hypot(h.x - x, h.y - y); if (d < nd && !h.fleeing) { nd = d; near = h; } }
-    F = { phase: 'fly', at: { x, y }, water: w, t0: now, shadow: near, biteAt: near ? Infinity : now + 450 + (3000 + Math.random() * 6000) * rod.bite, nibble: 0, nextNibble: now + 1200 + Math.random() * 1500 };
+    const chum = s.baitOn === 'chum' && s.bait.chum > 0 ? .5 : 1;
+    F = { phase: 'fly', at: { x, y }, water: w, t0: now, shadow: near, biteAt: near ? Infinity : now + 450 + (3000 + Math.random() * 6000) * rod.bite * chum, nibble: 0, nextNibble: now + 1200 + Math.random() * 1500 };
     for (const h of shadows) if (h !== near && Math.hypot(h.x - x, h.y - y) < 10) { h.fleeing = true; h.a = Math.atan2(h.y - y, h.x - x); } // the splash scares the others off
     audio.cast();
     setBar(`${near ? 'A fish is coming to look' : 'Waiting for a bite'} in the ${w.kind === 'sea' ? 'sea' : w.kind}… <em>${esc(w.region)}${c.night ? ' · night' : ''}${c.rain ? ' · rain' : ''}</em>`);
@@ -53,7 +56,7 @@ export function createAngling(g) {
     F.reel = { p: .5, target: .5, retarget: 0, b: .5 - w0 / 2, bv: 0, prog: .3, w: w0, w0, burst: 1, chest: Math.random() < .14 + RODS[s.rod].luck * .06 ? { at: .1 + Math.random() * .8, from: performance.now() + 900 + Math.random() * 2500, got: 0, done: false } : null };
     if (F.reel.chest) F.reel.chest.until = F.reel.chest.from + 6500;
     $('reel-chest').hidden = true; $('reel-chest').classList.remove('open');
-    $('reel').hidden = false; $('reel').classList.toggle('hard', f.tier >= 3);
+    $('reel').hidden = false; $('reel').classList.toggle('hard', f.tier >= 3); $('reel').classList.toggle('cursed', !!F.cursed);
     $('reel-fish').style.backgroundPosition = iconPos(f.icon);
     $('reel-title').textContent = f.tier >= 4 ? 'Something huge is on the line!' : f.tier >= 3 ? 'Something strong is on the line!' : 'Something is on the line!';
     $('reel-band').style.width = F.reel.w * 100 + '%';
@@ -63,16 +66,16 @@ export function createAngling(g) {
   function lose(text) { F = { phase: 'idle' }; audio.lost(); toast(text); setBar('Click open water to cast again'); }
   function endReel(caught, text) {
     $('reel').hidden = true; hold = false;
-    const f = F.fish, chest = F.reel?.chest?.done;
+    const f = F.fish, chest = F.reel?.chest?.done, cursed = F.cursed;
     F = { phase: 'idle' };
-    if (caught) landFish(f, chest); else if (text) lose(text + (chest ? ' The chest sank with it.' : ''));
+    if (caught) landFish(f, chest, cursed); else if (text) lose(text + (chest ? ' The chest sank with it.' : ''));
     if (on) setBar('Click open water to cast again');
   }
   let swapFish = null;
-  function landFish(f, chest = false) {
+  function landFish(f, chest = false, cursed = false) {
     const s = S(), first = !s.caught[f.id], worth = fishWorth(f, inc());
     s.caught[f.id] = (s.caught[f.id] || 0) + 1;
-    const kept = bagAdd(s, f.id), loot = chest ? openChest(s, inc()) : null;
+    const kept = bagAdd(s, f.id, cursed), loot = chest ? openChest(s, inc()) : null;
     const cheap = !kept && f.tier >= 3 ? s.bag.map((q, i) => [i, FISH_BY[q.id].v]).filter(([i]) => FISH_BY[s.bag[i].id].tier < f.tier).sort((a, b) => a[1] - b[1])[0]?.[0] : undefined;
     swapFish = cheap !== undefined ? { f, slot: cheap } : null;
     const where = kept ? `Into your backpack · ${s.bag.length} / ${s.bagSize} slots` : swapFish ? 'Your backpack is full! Make room for it?' : 'Your backpack is full, so you let it go. Sell your catch to make room.';
@@ -80,7 +83,8 @@ export function createAngling(g) {
     const lootHTML = loot ? `<div class="loot">${icon(ICON.chestOpen)}<span>Treasure! <b>+${fmt(loot.seeds)}</b> seeds${loot.pearl ? ' and a pearl' : ''}</span></div>` : '';
     audio.caught(); if (loot) { audio.chime(); pulseSeeds(); }
     const c = $('catch');
-    c.innerHTML = `<div class="catch-card t${f.tier}">${first ? '<em class="new">New catch!</em>' : ''}${icon(f.icon, 'big')}${tierTag(f)}<b>${f.junk ? 'You fished up an ' : 'You caught a '}${esc(f.name.toLowerCase())}!</b><span>${esc(f.desc)}</span><small>${kept ? `${SEED} Old Tam pays ${fmt(worth)} · ` : ''}${where}</small>${lootHTML}${swap}</div>`;
+    const price = cursed ? `${SEED} Lord Cinderbrow pays ${fmt(worth * CURSED_PRICE)} · ` : `${SEED} Old Tam pays ${fmt(worth)} · `;
+    c.innerHTML = `<div class="catch-card t${f.tier}${cursed ? ' cursed' : ''}">${first ? '<em class="new">New catch!</em>' : ''}${icon(f.icon, 'big' + (cursed ? ' cursed' : ''))}${tierTag(f)}${cursed ? '<em class="tier curse">Cursed</em>' : ''}<b>${f.junk ? 'You fished up an ' : cursed ? 'You caught a cursed ' : 'You caught a '}${esc(f.name.toLowerCase())}!</b><span>${cursed ? 'It glows a sickly violet and glares at you. Old Tam will not touch it, but Lord Cinderbrow adores these.' : esc(f.desc)}</span><small>${kept ? price : ''}${where}</small>${lootHTML}${swap}</div>`;
     c.hidden = false; c.classList.remove('show'); void c.offsetWidth; c.classList.add('show');
     clearTimeout(cardTimer); if (!swapFish) cardTimer = setTimeout(() => c.classList.remove('show'), f.tier >= 4 || loot ? 5000 : 3400);
     jot('fish:' + f.id); save(); hud();
@@ -88,7 +92,7 @@ export function createAngling(g) {
 
   /* The reel: hold to push the green band right, let go and it drifts back. Keep the fish inside it. */
   function stepReel(dt, now) {
-    const r = F.reel, f = F.fish, h = f.hard;
+    const r = F.reel, f = F.fish, h = Math.min(.95, f.hard + (F.cursed ? .12 : 0)); // cursed fish fight harder
     // How it fights: smooth swimmers wander, darters jump in bursts, sinkers hang back and floaters pull ahead;
     // mixed fish change style every couple of seconds.
     const mv = f.move === 'mixed' ? ['smooth', 'dart', 'sink', 'float'][Math.floor(now / 2200) % 4] : f.move || 'smooth';
@@ -131,7 +135,7 @@ export function createAngling(g) {
       shadowAt = now + 350;
       for (let k = 0; k < 6; k++) {
         const p = v.toWorld(Math.random() * innerWidth, 80 + Math.random() * (innerHeight - 200)), w = waterAt(s, Wd(), p.x, p.y);
-        if (!w || w.asleep || !shadows.every(h => Math.hypot(h.x - p.x, h.y - p.y) > 26)) continue;
+        if (!canFish(s, w) || !shadows.every(h => Math.hypot(h.x - p.x, h.y - p.y) > 26)) continue;
         shadows.push({ x: p.x, y: p.y, fish: rollCatch(w.kind, w.region, s.rod, conditions(s)), a: Math.random() * 6.283, sp: 1.5 + Math.random() * 3, age: 0, life: 16 + Math.random() * 22 });
         break;
       }
@@ -155,7 +159,7 @@ export function createAngling(g) {
         if (d > 2) { h.a = Math.atan2(F.at.y - h.y, F.at.x - h.x); h.x += Math.cos(h.a) * Math.min(d, 7 * dt); h.y += Math.sin(h.a) * Math.min(d, 7 * dt); }
         else if (F.biteAt === Infinity) F.biteAt = now + 500 + Math.random() * 1500 * RODS[S().rod].bite;
       }
-      if (now >= F.biteAt) { const s = S(); F.phase = 'bite'; F.biteEnd = now + 1050 + RODS[s.rod].luck * 200; F.fish = F.shadow ? F.shadow.fish : rollCatch(F.water.kind, F.water.region, s.rod, conditions(s)); audio.bite(); setBar('<b class="strike">A bite! Click or press Space!</b>'); }
+      if (now >= F.biteAt) { const s = S(); F.phase = 'bite'; F.biteEnd = now + 1050 + RODS[s.rod].luck * 200 + (s.tackle.float ? 900 : 0); F.fish = F.shadow ? F.shadow.fish : rollCatch(F.water.kind, F.water.region, s.rod, conditions(s)); F.cursed = rollCursed(F.water, F.fish); F.bait = useBait(s); audio.bite(); setBar(`<b class="strike">A bite! Click or press Space!</b>${F.bait ? ` <em>${esc(BAIT[F.bait].name.toLowerCase())} · ${s.bait[F.bait]} left</em>` : ''}`); }
     }
     if (F.phase === 'bite' && now > F.biteEnd) { if (F.shadow) { F.shadow.fleeing = true; F.shadow = null; } lose('Too slow! Strike as soon as the bobber dips.'); }
     if (F.phase === 'reel') stepReel(dt, now);
@@ -171,7 +175,7 @@ export function createAngling(g) {
     const w = waterAt(s, Wd(), p.x, p.y);
     if (!w) return false;
     if (v.cam.z < .9) { toast(placing ? 'Zoom in closer to set your trap.' : 'Zoom in closer to cast.'); return true; }
-    if (w.asleep) { toast(`${ZONES[w.zone].name} is asleep. Wake it to fish its waters.`); return true; }
+    if (!canFish(s, w)) { toast(DEMON_LANDS.includes(w.land) ? 'Demonreach lies across the sea. Old Tam can sell you a ferry ticket.' : `${ZONES[w.zone].name} is asleep. Wake it to fish its waters.`); return true; }
     if (placing) { s.traps.push({ x: p.x, y: p.y, kind: w.kind, region: w.region, t: s.age || 0 }); placing = false; audio.cast(); toast(`Trap set in the ${w.kind}. It catches a fish every four minutes, up to five, even while you are away.`); if (on) setBar('Click open water to cast'); else $('fishbar').hidden = true; save(); return true; }
     cast(p.x, p.y, w, now); return true;
   }
@@ -222,7 +226,9 @@ export function createAngling(g) {
       const Q = questOf(s, k), ready = questReady(s, k);
       return `<button class="qt${ready ? ' ready' : ''}" data-qt="${k}" title="${esc(GIVERS[k].name)}: ${esc(Q.title)}"><i class="portrait mini p-${k}"></i><span><b>${esc(Q.title)}</b>${Q.want.map(w => { const h = Math.min(wantHave(s, w), w.n); return `<small class="${h >= w.n ? 'ok' : ''}">${w.fish ? icon(w.fish === 'any' ? 0 : FISH_BY[w.fish].icon, 'tiny') : '✿ '}${h} / ${w.n}</small>`; }).join('')}${ready ? `<small class="go">Return to ${esc(GIVERS[k].name)}</small>` : ''}</span></button>`;
     }).join('');
-    if (rows !== lastTrack) { $('quests').innerHTML = rows; lastTrack = rows; }
+    const strays = V()?.strays?.() || [];
+    const all = rows + (strays.length ? `<button class="qt ready" data-qt="imp"><i class="item fork-i" style="background-position:${iconPos(ICON.fork)}"></i><span><b>${strays.length > 1 ? strays.length + ' imps have' : 'An imp has'} run off!</b><small class="go">Find ${strays.length > 1 ? 'them' : 'it'} and tap to send ${strays.length > 1 ? 'them' : 'it'} home</small></span></button>` : '');
+    if (all !== lastTrack) { $('quests').innerHTML = all; lastTrack = all; }
   }
   // Glides the camera to a giver: Old Tam at the end of his pier, the lord on his throne.
   function goTo(k) {
@@ -231,7 +237,7 @@ export function createAngling(g) {
     V().focusZone(o.zone);
     toast(k === 'lord' ? (S().objHp[o.id] === 0 ? 'Lord Cinderbrow waits on his throne in Demonreach.' : 'His throne lies in ruins in Demonreach, the isle to the north. Restore it and he returns.') : S().zones[o.zone].open ? 'Old Tam fishes from the end of the pier in Sunfall Coast. Click him to talk and to sell.' : 'Old Tam fishes from the pier in Sunfall Coast. Wake the glade beside it to meet him.');
   }
-  $('quests').addEventListener('click', e => { const b = e.target.closest('[data-qt]'); if (b) goTo(b.dataset.qt); });
+  $('quests').addEventListener('click', e => { const b = e.target.closest('[data-qt]'); if (!b) return; if (b.dataset.qt === 'imp') { const f = V().strays()[0]; if (f) V().glide(f.x, f.y, Math.max(2.2, V().cam.z)); return; } goTo(b.dataset.qt); });
 
   /* Talking with the quest givers. */
   function rewardHTML(r) {
@@ -254,7 +260,7 @@ export function createAngling(g) {
     const gotHTML = got ? `<div class="got">You received: ${[got.seeds ? `<span>${SEED}${fmt(got.seeds)}</span>` : '', got.rod ? `<span>${icon(ICON.rod, 'tiny')}${got.rod}</span>` : '', got.bag ? `<span>${icon(ICON.pack, 'tiny')}+${got.bag} slots</span>` : '', got.boon ? `<span class="boon">✦ +${Math.round(got.boon * 100)}% earnings</span>` : ''].join('')}</div>` : '';
     const ladder = Q.order ? '<em>order</em>' : `<em>${q.n + 1} / ${G.quests.length}</em>`;
     const quest = got ? '' : `<div class="quest${ready ? ' ready' : ''}"><h3><span>${esc(Q.title)} ${stars(Q.stars)}</span>${ladder}</h3><ul class="wants">${Q.want.map(w => wantRow(s, w)).join('')}</ul><div class="rewards"><small>Reward</small>${rewardHTML(Q.reward)}</div></div>`;
-    const sell = k === 'fisher' ? `<button class="wood" data-talk="market" data-k="fisher">${icon(ICON.pack, 'tiny')}Sell fish</button>` : '';
+    const sell = k === 'fisher' ? `<button class="wood" data-talk="market" data-k="fisher">${icon(ICON.pack, 'tiny')}Sell &amp; shop</button>${s.ferry ? `<button class="wood" data-talk="ferry">${icon(ICON.boat, 'tiny')}Ferry</button>` : ''}` : `<button class="wood" data-talk="lordmarket" data-k="lord">${icon(ICON.curse, 'tiny')}Sell cursed fish</button>`;
     const buttons = got ? `<button class="wood primary" data-talk="next" data-k="${k}">Anything else?</button>${sell}<button class="wood" data-talk="bye">Farewell</button>`
       : !q.taken ? `<button class="wood primary" data-talk="accept" data-k="${k}">${k === 'lord' ? 'As you wish' : 'I\'ll do it'}</button>${sell}<button class="wood" data-talk="bye">Not now</button>`
       : ready ? `<button class="wood primary" data-talk="give" data-k="${k}">Hand it over</button>${sell}<button class="wood" data-talk="bye">Later</button>`
@@ -263,14 +269,41 @@ export function createAngling(g) {
   }
 
   /* Old Tam's market: he buys anything you catch, and pays double for one fish a day. */
-  function openMarket(msg = '') {
+  let marketWho = 'tam';
+  function openMarket(msg = '', who = marketWho) {
+    marketWho = who;
+    if (who === 'lord') return openLordMarket(msg);
     const s = S(), i0 = inc(), want = wantedFish(s), keep = questNeeds(s), worth = bagWorth(s, i0), cost = bagCost(s);
-    const rows = s.bag.map((q, i) => { const f = FISH_BY[q.id], p = marketPrice(s, f, i0), held = keep[q.id] ? `<small class="held">${Math.min(q.n, keep[q.id])} wanted for a quest</small>` : ''; return `<div class="mrow${f === want ? ' hot' : ''}">${icon(f.icon)}<span><b>${esc(f.name)} ×${q.n}</b>${tierTag(f)}${held}</span><small class="price">${SEED}${fmt(p)}${f === want ? ' <em>×2 today</em>' : ''}</small><button class="wood" data-mk="1" data-i="${i}">Sell 1</button>${q.n > 1 ? `<button class="wood" data-mk="all" data-i="${i}">All · ${fmt(p * q.n)}</button>` : '<span></span>'}</div>`; }).join('');
+    const rows = s.bag.map((q, i) => { const f = FISH_BY[q.id], p = priceOf(s, q, i0), k = q.id + (q.cursed ? '*' : ''), held = keep[k] ? `<small class="held">${Math.min(q.n, keep[k])} wanted for a quest</small>` : ''; return `<div class="mrow${f === want && !q.cursed ? ' hot' : ''}${q.cursed ? ' cursed' : ''}">${ic(q)}<span><b>${q.cursed ? 'Cursed ' + esc(f.name.toLowerCase()) : esc(f.name)} ×${q.n}</b>${tierTag(f)}${held}</span>${q.cursed ? '<small class="price no">"Get that thing away from me!"</small><span></span><span></span>' : `<small class="price">${SEED}${fmt(p)}${f === want ? ' <em>×2 today</em>' : ''}</small><button class="wood" data-mk="1" data-i="${i}">Sell 1</button>${q.n > 1 ? `<button class="wood" data-mk="all" data-i="${i}">All · ${fmt(p * q.n)}</button>` : '<span></span>'}`}</div>`; }).join('');
     show('market', `<div class="market-head"><i class="portrait mini p-fisher"></i><div><h2>Old Tam's market</h2><p class="sub">${msg ? esc(msg) : 'He buys anything you catch. Fish worth more as your lands earn more.'}</p></div></div>
       <div class="wanted">${icon(want.icon, 'big')}<div><b>Wanted today: ${esc(want.name)}</b><span>Old Tam pays double for it until tomorrow. ${esc(fishWhere(want))}.</span></div></div>
       ${rows ? `<div class="mrows">${rows}</div>` : '<div class="bag-info empty">Your backpack is empty. Go and catch something!</div>'}
       <div class="row"><button class="wood primary" data-mk="everything" ${worth ? '' : 'disabled'}>Sell everything · ${fmt(worth)}</button><button class="wood" data-mk="grow" ${s.bagSize >= BAG_MAX || s.seeds < cost ? 'disabled' : ''}>${s.bagSize >= BAG_MAX ? 'Backpack at its biggest' : `Bigger backpack (+4) · ${fmt(cost)}`}</button><button class="wood" data-mk="trap" ${s.trapsOwned >= TRAP.max || s.seeds < trapCost(s) ? 'disabled' : ''}>${icon(ICON.trap, 'tiny')}${s.trapsOwned >= TRAP.max ? 'All traps bought' : `Fish trap · ${fmt(trapCost(s))}`}</button><button class="wood" data-talk="tank">${icon(ICON.bowl, 'tiny')}Aquarium</button><button class="wood" data-talk="back" data-k="fisher">Back</button></div>
-      <p class="sub small">Selling everything keeps back any fish an open quest still needs.</p>`);
+      <p class="sub small">Selling everything keeps back any fish an open quest still needs.</p>
+      ${shopHTML(s, i0)}`);
+  }
+  // Bait, tackle and the ferry ticket, on Old Tam's shelf.
+  function shopHTML(s, i0) {
+    const bait = Object.entries(BAIT).map(([k, b]) => { const p = shopPrice(b.price, i0); return `<div class="shop">${icon(b.icon)}<span><b>${b.name} <em>×${b.n}</em></b><small>${b.desc} You have ${s.bait[k] || 0}.</small></span><button class="wood" data-buy="${k}" ${s.seeds < p ? 'disabled' : ''}>${fmt(p)}</button></div>`; }).join('');
+    const tackle = Object.entries(TACKLE).map(([k, b]) => { const p = shopPrice(b.price, i0), own = s.tackle[k]; return `<div class="shop${own ? ' own' : ''}">${icon(b.icon)}<span><b>${b.name}</b><small>${b.desc}</small></span>${own ? '<b class="ok">✓ Yours</b>' : `<button class="wood" data-buy="${k}" ${s.seeds < p ? 'disabled' : ''}>${fmt(p)}</button>`}</div>`; }).join('');
+    const open = ferryOpen(s, mapsDone(s)), fp = ferryCost(i0);
+    const ferry = `<div class="shop ferry${s.ferry ? ' own' : ''}">${icon(ICON.boat)}<span><b>Ferry to Demonreach</b><small>${s.ferry ? 'Your ticket never runs out. Sail whenever you like.' : open ? 'My cousin rows to the demon isle. You could fish its waters before you restore it, and meet its lord.' : 'Help me with six quests, or restore four lands, and I\'ll have my cousin row you over.'}</small></span>${s.ferry ? '<button class="wood primary" data-talk="ferry">Sail</button>' : `<button class="wood" data-buy="ferry" ${!open || s.seeds < fp ? 'disabled' : ''}>${open ? fmt(fp) : 'Locked'}</button>`}</div>`;
+    return `<h3 class="bag-h">Bait &amp; tackle</h3>${bait}${tackle}<h3 class="bag-h">Travel</h3>${ferry}`;
+  }
+  // Lord Cinderbrow's larder: he buys cursed fish only, at three times their worth.
+  function openLordMarket(msg = '') {
+    const s = S(), i0 = inc(), worth = bagWorth(s, i0, 'lord');
+    const rows = s.bag.map((q, i) => q.cursed ? (() => { const f = FISH_BY[q.id], p = priceOf(s, q, i0, 'lord'); return `<div class="mrow cursed">${ic(q)}<span><b>Cursed ${esc(f.name.toLowerCase())} ×${q.n}</b>${tierTag(f)}</span><small class="price">${SEED}${fmt(p)} <em>triple</em></small><button class="wood" data-mk="1" data-i="${i}">Sell 1</button>${q.n > 1 ? `<button class="wood" data-mk="all" data-i="${i}">All · ${fmt(p * q.n)}</button>` : '<span></span>'}</div>`; })() : '').join('');
+    show('market', `<div class="market-head"><i class="portrait mini p-lord"></i><div><h2>The lord's larder</h2><p class="sub">${msg ? esc(msg) : 'Lord Cinderbrow buys cursed fish, and pays three times what they are worth. Ordinary fish bore him.'}</p></div></div>
+      ${rows ? `<div class="mrows">${rows}</div>` : `<div class="bag-info empty">No cursed fish in your backpack. Fish the waters round Demonreach: about one catch in three comes up cursed.</div>`}
+      <div class="row"><button class="wood primary" data-mk="everything" ${worth ? '' : 'disabled'}>Sell every cursed fish · ${fmt(worth)}</button><button class="wood" data-talk="back" data-k="lord">Back</button></div>`);
+  }
+  // The ferry: sail over to fish round the isle, or call on its lord.
+  function openFerry() {
+    const s = S(), throne = Wd().objects.find(q => q.place === 'throne'), home = throne && s.objHp[throne.id] === 0;
+    show('ferry', `<div class="bag-head">${icon(ICON.boat, 'big')}<div><h2>The Demonreach ferry</h2><p class="sub">Tam's cousin Wynn rows you across the channel. "Mind the water, it bites back up there."</p></div></div>
+      <div class="row"><button class="wood primary" data-ferry="sail">${icon(ICON.rod, 'tiny')}Sail and fish</button><button class="wood" data-ferry="lord">${icon(ICON.fork, 'tiny')}Call on Lord Cinderbrow</button><button class="wood" data-talk="bye">Stay here</button></div>
+      <p class="sub small">${home ? 'His throne stands again, and his imps play round it.' : 'His throne lies in ruins, but he will still receive you at the landing.'} About one fish in three from these waters comes up cursed.</p>`);
   }
 
   /* The aquarium: your donated fish swim in it, and each adds to all earnings for good. */
@@ -286,8 +319,9 @@ export function createAngling(g) {
   /* The backpack window. */
   function openBag() {
     const s = S(), i0 = inc(), q = s.bag[selected];
-    const slots = Array.from({ length: s.bagSize }, (_, i) => { const it = s.bag[i]; return it ? `<button class="slot t${FISH_BY[it.id].tier}${i === selected ? ' sel' : ''}" data-slot="${i}" title="${esc(FISH_BY[it.id].name)}">${icon(FISH_BY[it.id].icon)}${it.n > 1 ? `<b>${it.n}</b>` : ''}</button>` : '<span class="slot empty"></span>'; }).join('');
-    const info = q ? (() => { const f = FISH_BY[q.id]; return `<div class="bag-info">${icon(f.icon, 'big')}<div><b>${esc(f.name)} ${tierTag(f)}</b><span>${esc(f.desc)}</span><small>${SEED}Old Tam pays ${fmt(marketPrice(s, f, i0))} each · ${q.n} here · ${esc(fishWhere(f))}</small></div><div class="bag-acts"><button class="wood ghost" data-bag="release">Let ${q.n > 1 ? 'them' : 'it'} go</button></div></div>`; })()
+    const slots = Array.from({ length: s.bagSize }, (_, i) => { const it = s.bag[i]; return it ? `<button class="slot t${FISH_BY[it.id].tier}${it.cursed ? ' cursed' : ''}${i === selected ? ' sel' : ''}" data-slot="${i}" title="${it.cursed ? 'Cursed ' : ''}${esc(FISH_BY[it.id].name)}">${ic(it)}${it.n > 1 ? `<b>${it.n}</b>` : ''}</button>` : '<span class="slot empty"></span>'; }).join('');
+    const baits = Object.keys(BAIT).filter(k => s.bait[k] > 0), baitRow = baits.length || Object.keys(s.tackle).length ? `<div class="traps bait">${icon(s.baitOn ? BAIT[s.baitOn].icon : ICON.bobber)}<span><b>On your hook: ${s.baitOn ? `${BAIT[s.baitOn].name} (${s.bait[s.baitOn]} left)` : 'nothing'}</b><small>${Object.keys(s.tackle).map(k => TACKLE[k].name).join(' and ') || 'No tackle yet'}${Object.keys(s.tackle).length ? ' fitted to your rod' : ''}.</small></span><div class="bag-acts">${baits.map(k => `<button class="wood${s.baitOn === k ? ' primary' : ''}" data-bait="${k}">${icon(BAIT[k].icon, 'tiny')}${s.bait[k]}</button>`).join('')}${s.baitOn ? '<button class="wood ghost" data-bait="">None</button>' : ''}</div></div>` : '';
+    const info = q ? (() => { const f = FISH_BY[q.id]; return `<div class="bag-info${q.cursed ? ' cursed' : ''}">${ic(q, 'big')}<div><b>${q.cursed ? 'Cursed ' + esc(f.name.toLowerCase()) : esc(f.name)} ${tierTag(f)}</b><span>${q.cursed ? 'It glows violet and glares at you. Old Tam won\'t touch it.' : esc(f.desc)}</span><small>${SEED}${q.cursed ? `Lord Cinderbrow pays ${fmt(priceOf(s, q, i0, 'lord'))}` : `Old Tam pays ${fmt(marketPrice(s, f, i0))}`} each · ${q.n} here · ${esc(fishWhere(f))}</small></div><div class="bag-acts"><button class="wood ghost" data-bag="release">Let ${q.n > 1 ? 'them' : 'it'} go</button></div></div>`; })()
       : `<div class="bag-info empty">${s.bag.length ? 'Pick something in your backpack to look at it.' : 'Your backpack is empty. Press F, or the Fish button, and click open water to cast.'}</div>`;
     const kinds = CATCHES.filter(f => s.caught[f.id]).length;
     const dex = CATCHES.map(f => { const n = s.caught[f.id]; return `<div class="dex-f t${f.tier}${n ? ' got' : ''}${s.tank[f.id] ? ' tanked' : ''}" title="${n ? esc(`${f.name} (${TIERS[f.tier]}): ${f.desc} Caught ${n}.${s.tank[f.id] ? ' In the aquarium.' : ''}`) : esc(`Not caught yet. ${fishWhere(f)}.`)}">${icon(f.icon)}<small>${n ? esc(f.name) : '???'}</small><em>${n ? '' : esc(fishWhere(f))}</em></div>`; }).join('');
@@ -296,6 +330,7 @@ export function createAngling(g) {
       <div class="bag">${slots}</div>${info}
       <div class="row"><button class="wood primary" data-goto="fisher">${SEED}Sell to Old Tam · ${fmt(bagWorth(s, i0))}</button><button class="wood" data-bag="crate" ${bagWorth(s, i0, true) ? '' : 'disabled'}>${icon(ICON.crate, 'tiny')}Sell in the crate · ${fmt(bagWorth(s, i0, true))}</button><button class="wood" data-bag="tank">${icon(ICON.bowl, 'tiny')}Aquarium · +${Math.round(tankBonus(s) * 1000) / 10}%</button></div>
       <p class="sub small">The crate takes anything, anywhere, for ${Math.round(.6 * 100)}% of Old Tam's price. It keeps back fish your quests need.</p>
+      ${baitRow}${s.ferry ? `<div class="traps">${icon(ICON.boat)}<span><b>Ferry ticket</b><small>Wynn rows you to Demonreach whenever you like.</small></span><button class="wood" data-talk="ferry">Sail</button></div>` : ''}
       ${s.trapsOwned ? `<div class="traps">${icon(ICON.trap)}<span><b>Fish traps</b><small>${s.traps.length} set${s.trapsOwned > s.traps.length ? ` · ${s.trapsOwned - s.traps.length} to place` : ''} · ${s.traps.reduce((a, q) => a + trapCount(s, q), 0)} fish waiting. Click a trap in the water to empty it.</small></span>${s.trapsOwned > s.traps.length ? '<button class="wood" data-bag="place">Set a trap</button>' : ''}</div>` : ''}
       <h3 class="bag-h">Catches <em>${kinds} / ${CATCHES.length}</em></h3><div class="dex">${dex}</div>
       <h3 class="bag-h">Quests</h3>${quests}`);
@@ -314,13 +349,34 @@ export function createAngling(g) {
     const m = e.target.closest('[data-mk]');
     if (m) {
       const act = m.dataset.mk, i0 = inc(); let gain = 0, msg = '';
-      if (act === '1' || act === 'all') gain = sellSlot(s, +m.dataset.i, act === '1' ? 1 : STACK, i0);
-      if (act === 'everything') gain = sellAll(s, i0);
+      if (act === '1' || act === 'all') gain = sellSlot(s, +m.dataset.i, act === '1' ? 1 : STACK, i0, marketWho);
+      if (act === 'everything') gain = sellAll(s, i0, marketWho);
       if (act === 'trap') { const c = trapCost(s); if (s.seeds >= c && s.trapsOwned < TRAP.max) { s.seeds -= c; s.trapsOwned++; audio.buy(); save(); placeTrap(); toast('A wicker fish trap. Click open water to set it.'); return true; } }
       if (act === 'grow') { const c = bagCost(s); if (s.seeds >= c && s.bagSize < BAG_MAX) { s.seeds -= c; s.bagSize += 4; audio.buy(); msg = 'A bigger backpack: four more slots. "Room for the big ones," he winks.'; } }
-      if (gain) { audio.buy(); pulseSeeds(); msg = `Sold · +${fmt(gain)} seeds. "Pleasure doing business."`; }
+      if (gain) { audio.buy(); pulseSeeds(); msg = marketWho === 'lord' ? `Sold · +${fmt(gain)} seeds. "Delightfully wicked."` : `Sold · +${fmt(gain)} seeds. "Pleasure doing business."`; }
       selected = -1; save(); hud(); openMarket(msg); return true;
     }
+    const buy = e.target.closest('[data-buy]');
+    if (buy) {
+      const k = buy.dataset.buy, i0 = inc(); let msg = '';
+      if (BAIT[k]) { const p = shopPrice(BAIT[k].price, i0); if (s.seeds >= p) { s.seeds -= p; s.bait[k] = (s.bait[k] || 0) + BAIT[k].n; s.baitOn = k; msg = `${BAIT[k].n} ${BAIT[k].name.toLowerCase()}, and it's on your hook. Change bait in your backpack.`; } }
+      if (TACKLE[k]) { const p = shopPrice(TACKLE[k].price, i0); if (s.seeds >= p && !s.tackle[k]) { s.seeds -= p; s.tackle[k] = 1; msg = `The ${TACKLE[k].name.toLowerCase()} is yours, for good.`; } }
+      if (k === 'ferry') { const p = ferryCost(i0); if (s.seeds >= p && !s.ferry && ferryOpen(s, mapsDone(s))) { s.ferry = true; msg = 'A ferry ticket to Demonreach. "Wynn will row you any time. Just ask."'; } }
+      if (msg) { audio.buy(); save(); hud(); }
+      openMarket(msg, 'tam'); return true;
+    }
+    const fy = e.target.closest('[data-ferry]');
+    if (fy) {
+      if (fy.dataset.ferry === 'lord') { talk('lord'); return true; }
+      const o = Wd().objects.find(q => q.place === 'throne'); $('modal').close();
+      if (o) { // land on the south shore, facing the channel
+        let x = o.x * 4, y = o.y * 4; while (y < o.y * 4 + 600) { const w = waterAt(s, Wd(), x, y); if (w?.kind === 'sea') break; y += 4; }
+        V().glide(x, y - 30, 2.2); toggle(true); toast('Wynn rows you over to Demonreach. Cast into the dark water round the isle.');
+      }
+      return true;
+    }
+    const bt = e.target.closest('[data-bait]');
+    if (bt) { const k = bt.dataset.bait; s.baitOn = k && s.bait[k] > 0 ? k : ''; save(); openBag(); return true; }
     const t = e.target.closest('[data-talk]');
     if (t) {
       const k = t.dataset.k, act = t.dataset.talk;
@@ -329,7 +385,9 @@ export function createAngling(g) {
       if (act === 'give') { const Q = questOf(s, k), got = turnIn(s, k, inc()); if (got) { audio.chime(); pulseSeeds(); save(); hud(); talk(k, Q.thanks, got); } }
       if (act === 'next') talk(k);
       if (act === 'back') talk(k);
-      if (act === 'market') openMarket();
+      if (act === 'market') openMarket('', 'tam');
+      if (act === 'lordmarket') openMarket('', 'lord');
+      if (act === 'ferry') openFerry();
       if (act === 'tank') openTank();
       if (act === 'fish') { $('modal').close(); toggle(true); }
       if (act === 'bag') openBag();
@@ -340,6 +398,13 @@ export function createAngling(g) {
   function tapFolk(f) {
     if (f.kind === 'pier') { talk('fisher'); return true; }
     if (f.kind === 'lord') { talk('lord'); return true; }
+    if (f.kind === 'imp' && (f.stray || f.lost)) {
+      const s = S(), gain = questSeeds(2, inc()); s.seeds += gain; pulseSeeds(); audio.chime();
+      f.stray = false; f.lost = false; f.homing = true; f.goal = { x: f.home.x, y: f.home.y }; f.wave = .8; f.pause = 0;
+      let gift = '';
+      if (Math.random() < .45) { const fish = rollCatch('sea', 'Demonreach', s.rod, conditions(s)), cursed = Math.random() < .5; if (!fish.junk && bagAdd(s, fish.id, cursed)) { s.caught[fish.id] = (s.caught[fish.id] || 0) + 1; gift = ` It drops a ${cursed ? 'cursed ' : ''}${fish.name.toLowerCase()} at your feet.`; jot('fish:' + fish.id); } }
+      toast(`The imp scampers home to the throne · +${fmt(gain)} seeds.${gift}`); save(); hud(); return true;
+    }
     if (f.kind === 'imp') { f.wave = .9; f.pause = 1.5; audio.nibble(); toast(IMP[Math.floor(Math.random() * IMP.length)]); return true; }
     return false;
   }
