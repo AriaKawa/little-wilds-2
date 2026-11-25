@@ -1,10 +1,12 @@
 // Bugs and buried things: Pip the bug catcher in Honey Meadow and Bramwell the digger at Red Terrace. Rules only;
 // the net, the dig spots and their windows live in keepers.mjs. Everything you find goes into the same backpack as
 // your fish, so it is registered alongside them in FISH_BY, with a `kind` and the `buyer` who pays for it.
-import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=40';
-import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=40';
+import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=41';
+import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=41';
 
 export const PIP_ZONE = 4, BRAM_ZONE = 12; // Honey Meadow in Hollow Vale; Red Terrace in Ember Basin
+// "2 fireflies", "3 praying mantises", "2 mammoth tusks".
+export const plural = (name, n) => { const s = name.toLowerCase(); return n === 1 || /(tusks|wings|fish)$/.test(s) ? s : /fly$/.test(s) ? s.slice(0, -1) + 'ies' : /(s|x|ch|sh)$/.test(s) ? s + 'es' : s + 's'; };
 
 /* Bugs. Each lives in a habitat (meadow, tree, water or shore), at an hour, in seasons, sometimes in one region or
    only in the rain, and moves in its own way: it flutters, hovers, hops, crawls, perches on a trunk or glows. `shy`
@@ -193,7 +195,7 @@ GIVERS.pip = { name: 'Pip', role: 'the bug catcher of Honey Meadow', quests: [
 ], orders: ['cabbage', 'bee', 'ladybug', 'hopper', 'moth', 'cricket', 'damsel', 'monarch', 'firefly', 'cicada', 'mantis', 'crab'] };
 GIVERS.pip.order = (k) => {
   const pick = GIVERS.pip.orders[(k * 5 + 3) % GIVERS.pip.orders.length], b = BUG_BY[pick], n = b.tier >= 2 ? 1 + k % 2 : 2 + k % 2;
-  return { stars: 1, title: 'A jar to fill', ask: `My bug book needs another drawing. ${n} ${b.name.toLowerCase()}${n > 1 ? 's' : ''}, please?`, want: [{ fish: pick, n }], thanks: 'Got them! Here\'s something for your trouble.', reward: { seeds: 6 + k * 2 }, order: true };
+  return { stars: 1, title: 'A jar to fill', ask: `My bug book needs another drawing. ${n} ${plural(b.name, n)}, please?`, want: [{ fish: pick, n }], thanks: 'Got them! Here\'s something for your trouble.', reward: { seeds: 6 + k * 2 }, order: true };
 };
 GIVERS.bram = { name: 'Bramwell', role: 'the digger of Red Terrace', quests: [
   Q(1, 'Break ground', 'Hm? Oh, hello. Bramwell. I dig. See those little star-shaped cracks in the ground? Something is buried under every one. Take this shovel and dig up three.', [], 'Three holes, and your back still works. Good start.', { seeds: 3 }),
@@ -222,7 +224,7 @@ GIVERS.bram.onAccept = (s, q) => { q.base = s.dug || 0; if (!s.shovel) s.shovel 
 GIVERS.pip.onAccept = s => { if (!s.net) s.net = 1; };
 GIVERS.bram.order = (k) => {
   const pick = GIVERS.bram.orders[(k * 5 + 3) % GIVERS.bram.orders.length], f = FIND_BY[pick], n = f.tier >= 2 ? 1 + k % 2 : 2 + k % 2;
-  return { stars: 1, title: 'For the collection', ask: `A collector in Sunfall wants ${n} ${f.name.toLowerCase()}${n > 1 ? 's' : ''}. Fancy a dig?`, want: [{ fish: pick, n }], thanks: 'Splendid. Your share.', reward: { seeds: 6 + k * 2 }, order: true };
+  return { stars: 1, title: 'For the collection', ask: `A collector in Sunfall wants ${n} ${plural(f.name, n)}. Fancy a dig?`, want: [{ fish: pick, n }], thanks: 'Splendid. Your share.', reward: { seeds: 6 + k * 2 }, order: true };
 };
 // What Pip pays for a bug, Bramwell for a find: their worth, growing with what the land earns.
 export const findWorth = (f, inc) => fishWorth(f, inc);
@@ -239,7 +241,7 @@ export function stallOf(w, zone) {
   for (let r = 50; r < 260 && !best; r += 10) for (let a = 0; a < 16 && !best; a++) {
     const x = z.px + Math.cos(a * .3927 + 1) * r, y = z.py + Math.sin(a * .3927 + 1) * r * .7;
     if (x < 40 || y < 40 || x > TW - 40 || y > TH - 40 || w.zone[Math.floor(y / CELL) * CW + Math.floor(x / CELL)] !== zone) continue;
-    if (w.free(x, y, 30) && w.free(x + 24, y + 2, 12) && dry(x, y)) best = { x, y, kx: x + 24, ky: y + 2 };
+    if (w.free(x, y, 30) && w.free(x + 24, y + 2, 12) && dry(x, y) && !w.objects.some(o => Math.hypot(o.x * CELL - x, o.y * CELL - y) < 30 || Math.hypot(o.x * CELL - x - 24, o.y * CELL - y - 2) < 12)) best = { x, y, kx: x + 24, ky: y + 2 };
   }
   return stalls[zone] = best;
 }

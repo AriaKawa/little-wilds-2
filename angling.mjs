@@ -1,9 +1,9 @@
 // Fishing, played: the rod (F), casting into water, the bite, the reel, the catch, the backpack (B), Old Tam's
 // market on the pier, and the quests of Old Tam and Lord Cinderbrow. The rules are in fishing.mjs.
-import { ZONES } from './world.mjs?v=40';
-import { income } from './sim.mjs?v=40';
-import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest, canFish, rollCursed, priceOf, CURSED_PRICE, BAIT, TACKLE, shopPrice, useBait, ferryOpen, ferryCost, DEMON_LANDS } from './fishing.mjs?v=40';
-import { mapsDone } from './sim.mjs?v=40';
+import { ZONES } from './world.mjs?v=41';
+import { income } from './sim.mjs?v=41';
+import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest, canFish, rollCursed, priceOf, CURSED_PRICE, BAIT, TACKLE, shopPrice, useBait, ferryOpen, ferryCost, DEMON_LANDS } from './fishing.mjs?v=41';
+import { mapsDone } from './sim.mjs?v=41';
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
@@ -349,7 +349,7 @@ export function createAngling(g) {
     if (b && b.dataset.bag === 'place') { placeTrap(); return true; }
     const dn = e.target.closest('[data-donate]');
     if (dn) { const f = FISH_BY[dn.dataset.donate]; if (donate(s, f.id)) { audio.chime(); toast(`The ${f.name.toLowerCase()} joins the aquarium · +${Math.round(TANK_BONUS[f.tier] * 1000) / 10}% to all earnings, for good.`); save(); hud(); } openTank(); return true; }
-    if (b && b.dataset.bag === 'release') { s.bag.splice(selected, 1); selected = -1; toast('Back into the water it goes.'); save(); hud(); openBag(); return true; }
+    if (b && b.dataset.bag === 'release') { const k = FISH_BY[s.bag[selected]?.id]?.kind; s.bag.splice(selected, 1); selected = -1; toast(k === 'bug' ? 'Off it goes, back to the meadow.' : k ? 'You set it down and leave it be.' : 'Back into the water it goes.'); save(); hud(); openBag(); return true; }
     const m = e.target.closest('[data-mk]');
     if (m) {
       const act = m.dataset.mk, i0 = inc(); let gain = 0, msg = '';

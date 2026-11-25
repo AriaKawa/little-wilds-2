@@ -1,11 +1,11 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=40';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=40';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=40';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=40';
-import { steer, standable, overWater, escape } from './nav.mjs?v=40';
-import { trapCount } from './fishing.mjs?v=40';
-import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=40';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=41';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=41';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=41';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=41';
+import { steer, standable, overWater, escape } from './nav.mjs?v=41';
+import { trapCount } from './fishing.mjs?v=41';
+import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=41';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;

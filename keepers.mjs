@@ -1,16 +1,15 @@
 // Pip and Bramwell, played: the bug net (N), bugs out on the land, dig spots and the shovel, Pip's bug house,
 // Bramwell's museum, and their markets. Their quests run through the same dialogue as Old Tam's (angling.mjs);
 // the rules are in finds.mjs.
-import { ZONES, LANDS, CELL, CW, TW, TH, BEACH } from './world.mjs?v=40';
-import { FISH_BY, TIERS, ITEM_COLS, ITEM_ROWS, GIVERS, questState, questNeeds, conditions, waterAt, bagAdd, bagCount, priceOf, sellAll, bagWorth, STACK } from './fishing.mjs?v=40';
-import { BUGS, BUG_BY, NETS, rollBug, HOUSE_BONUS, houseBonus, houseMax, FINDS, FIND_BY, SETS, PIECES, setPieces, setDone, museumCount, museumBonus, museumMax, PIECE_BONUS, SET_BONUS, rollDig, assess, spawnDigs, DIG_ICON, DIG_SEEDS, SHOVELS, PIP_ZONE, BRAM_ZONE, stallOf } from './finds.mjs?v=40';
-import { icon } from './angling.mjs?v=40';
+import { ZONES, LANDS, CELL, CW, TW, TH, BEACH, KIND } from './world.mjs?v=41';
+import { FISH_BY, TIERS, ITEM_COLS, ITEM_ROWS, GIVERS, questState, questNeeds, conditions, waterAt, bagAdd, bagCount, priceOf, sellAll, bagWorth, STACK } from './fishing.mjs?v=41';
+import { BUGS, BUG_BY, NETS, rollBug, HOUSE_BONUS, houseBonus, houseMax, FINDS, FIND_BY, SETS, PIECES, setPieces, setDone, museumCount, museumBonus, museumMax, PIECE_BONUS, SET_BONUS, rollDig, assess, spawnDigs, DIG_ICON, DIG_SEEDS, SHOVELS, PIP_ZONE, BRAM_ZONE, stallOf } from './finds.mjs?v=41';
+import { icon } from './angling.mjs?v=41';
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
 const SEED = '<i class="ico ico-seed"></i>';
 const tierTag = f => `<em class="tier t${f.tier}">${TIERS[f.tier]}</em>`;
-const plural = (name, n) => n === 1 ? name.toLowerCase() : name.toLowerCase().replace(/(fly)$/, 'flies').replace(/([^s])$/, '$1s');
 const MAX_BUGS = 6;
 
 export function createKeepers(g, angling) {
@@ -28,7 +27,7 @@ export function createKeepers(g, angling) {
     document.body.classList.toggle('netting', net);
     $('btn-net').setAttribute('aria-pressed', net);
     $('netbar').hidden = !net;
-    if (net) { $('netbar').innerHTML = `${icon(95)}<span>Creep up slowly, then click to swing. ${esc(NETS[s.net].name)}.</span><small>N to put the net away</small>`; audio.start(); }
+    if (net) { $('netbar').innerHTML = `${icon(95)}<span>${matchMedia('(pointer: coarse)').matches ? 'Tap a bug to swing' : 'Creep up slowly, then click to swing'}. ${esc(NETS[s.net].name)}.</span><small>N to put the net away</small>`; audio.start(); }
   }
 
   /* Bugs come and go near you, on woken ground, once you have a net. */
@@ -43,19 +42,16 @@ export function createKeepers(g, angling) {
     if (w.edge[i] === BEACH) return { hab: 'shore', zone, region, x, y };
     if (w.blocked[c] || w.waterT[i] !== 255 || s.h[c] < .4) return null;
     // a tree close by: the bug may live on its trunk
-    let tree = null, td = 14;
-    for (const o of w.objects) if (!o.place && o.size >= 28 && s.objHp[o.id] === 0) { const d = Math.hypot(o.x * CELL - x, o.y * CELL - y); if (d < td) { td = d; tree = { x: o.x * CELL, y: o.y * CELL, h: o.size * .7 }; } }
+    let tree = null, td = 60; // the nearest living tree: bugs that live on trunks often pick one close by
+    for (const o of w.objects) if (!o.place && o.dead === KIND.deadTree && s.objHp[o.id] === 0) { const d = Math.hypot(o.x * CELL - x, o.y * CELL - y); if (d < td) { td = d; tree = { x: o.x * CELL, y: o.y * CELL, h: o.size * .7 }; } }
     for (const t of s.trees) { const d = Math.hypot(t.x * CELL - x, t.y * CELL - y); if (d < td) { td = d; tree = { x: t.x * CELL, y: t.y * CELL, h: 22 }; } }
-    return tree ? { hab: 'tree', zone, region, x, y, tree } : { hab: 'meadow', zone, region, x, y };
+    return tree && (td < 14 || Math.random() < .45) ? { hab: 'tree', zone, region, x: tree.x, y: tree.y, tree } : { hab: 'meadow', zone, region, x, y };
   }
   function spawnBug(s, now) {
     const v = V(), w = Wd();
     for (let k = 0; k < 8; k++) {
       const p = v.toWorld(60 + Math.random() * (innerWidth - 120), 100 + Math.random() * (innerHeight - 240));
       let h = habitatAt(s, w, p.x, p.y); if (!h) continue;
-      if (h.hab === 'meadow' && Math.random() < .3) { // look for a tree nearby, so trunk bugs turn up too
-        const t = habitatAt(s, w, p.x + (Math.random() - .5) * 30, p.y + (Math.random() - .5) * 30); if (t?.hab === 'tree') h = t;
-      }
       const b = rollBug(h.hab, h.region, conditions(s), s.net); if (!b) continue;
       if (b.tier >= 3 && bugs.some(q => q.b.tier >= 3 && !q.flee)) continue; // one rare bug about at a time
       const q = { b, x: h.x, y: h.y, ax: h.x, ay: h.y, lift: 0, dir: Math.random() < .5 ? -1 : 1, age: 0, life: (b.tier >= 3 ? 22 : 38) + Math.random() * 18, pause: 0, alpha: 0, flee: 0, alert: 0, tx: h.x, ty: h.y, ph: Math.random() * 6 };
@@ -135,10 +131,11 @@ export function createKeepers(g, angling) {
   function digAt(spot) {
     const s = S(), v = V();
     if (!s.shovel) { toast(`Something is buried here. Bramwell, the digger at ${ZONES[BRAM_ZONE].name} in ${LANDS[ZONES[BRAM_ZONE].land].name}, could lend you a shovel.`); return; }
+    const id = rollDig(s), fits = id === 'pouch' || (id === 'molecricket' && !s.net) || s.bag.some(q => q.id === id && !q.cursed && q.n < STACK) || s.bag.length < s.bagSize;
+    if (!fits) { v.dirt?.(spot.x, spot.y); audio.shovel?.(); toast('You feel something down there, but your backpack is full. Make room, then dig here again.'); return; }
     s.digs.splice(s.digs.indexOf(spot), 1); s.dug = (s.dug || 0) + 1;
     holes.push({ x: spot.x, y: spot.y, t: performance.now() });
     v.dirt?.(spot.x, spot.y); audio.shovel?.();
-    const id = rollDig(s);
     if (id === 'pouch') { const gain = Math.round(DIG_SEEDS(inc()) * (1 + Math.random())); s.seeds += gain; v.reward(spot.x, spot.y - 8, gain, 4); pulseSeeds(); audio.chime(); toast(`A little pouch of seeds, buried long ago · +${fmt(gain)} seeds`); save(); hud(); return; }
     if (id === 'molecricket' && !s.net) { toast('Something wriggles out of the hole and burrows off. A bug? Pip would know.'); save(); hud(); return; }
     const f = FISH_BY[id], first = !s.caught[id], kept = bagAdd(s, id);
@@ -158,11 +155,11 @@ export function createKeepers(g, angling) {
   /* Input */
   function pointerDown(e, now) {
     const dig = hitDig(e.clientX, e.clientY);
-    if (dig && !net) { digAt(dig); return true; }
-    if (!net) return false;
-    if (V().cam.z < .9) { toast('Zoom in closer to catch bugs.'); return true; }
+    if (dig && (!net || !bugInReach(e))) { digAt(dig); return true; }
+    if (!net || V().cam.z < .9) return false; // far out on the map, a click still looks around
     swingAt(e, now); return true;
   }
+  function bugInReach(e) { const p = V().toWorld(e.clientX, e.clientY), reach = NETS[S().net]?.reach || 9; return bugs.some(q => !q.flee && q.alpha > .3 && Math.hypot(q.x - p.x, q.y - q.lift - p.y) - q.b.size * .4 < reach); }
   function keyDown(e) { if (e.code === 'KeyN' && !e.repeat) { toggleNet(); return true; } return false; }
 
   /* The tracker: dig spots waiting, once you have a shovel. */

@@ -1,9 +1,9 @@
 // Rules of restoration. No DOM: runs in the game, offline catch-up and the pacing test alike.
 // One field covers the whole continent; glades are bought outward from the middle, and one army of spirits works all of it.
-import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=40';
-import { CATCHES, tankBonus } from './fishing.mjs?v=40';
-import { BUGS, PIECES, houseBonus, museumBonus } from './finds.mjs?v=40';
-import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=40';
+import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=41';
+import { CATCHES, tankBonus } from './fishing.mjs?v=41';
+import { BUGS, PIECES, houseBonus, museumBonus } from './finds.mjs?v=41';
+import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=41';
 // The ground map spirits and animals walk by, rebuilt when a different set of planted trees is in play.
 export function navOf(s, w) { if (!w.nav || w.navTrees !== s.trees) { buildNav(w); for (const t of s.trees) markTree(w, t); w.navTrees = s.trees; } return w.nav; }
 
