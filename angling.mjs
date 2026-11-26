@@ -31,9 +31,10 @@ export function createAngling(g) {
 
   /* The rod */
   function toggle(want = !on) {
-    if (want === on) return;
+    if (want === on && !placing) return;
     on = want;
-    if (!on) { if (F.phase === 'reel') endReel(false, ''); F = { phase: 'idle' }; shadows.length = 0; placing = false; }
+    placing = false;
+    if (!on) { if (F.phase === 'reel') endReel(false, ''); F = { phase: 'idle' }; shadows.length = 0; }
     document.body.classList.toggle('fishing', on);
     $('btn-fish').setAttribute('aria-pressed', on);
     $('fishbar').hidden = !on;

@@ -4,7 +4,7 @@
 import { ZONES, LANDS, CELL, CW, TW, TH, BEACH, KIND } from './world.mjs?v=41';
 import { FISH_BY, TIERS, ITEM_COLS, ITEM_ROWS, GIVERS, questState, questNeeds, conditions, waterAt, bagAdd, bagCount, priceOf, sellAll, bagWorth, STACK } from './fishing.mjs?v=41';
 import { BUGS, BUG_BY, NETS, rollBug, HOUSE_BONUS, houseBonus, houseMax, FINDS, FIND_BY, SETS, PIECES, setPieces, setDone, museumCount, museumBonus, museumMax, PIECE_BONUS, SET_BONUS, rollDig, assess, spawnDigs, DIG_ICON, DIG_SEEDS, SHOVELS, PIP_ZONE, BRAM_ZONE, stallOf } from './finds.mjs?v=41';
-import { icon } from './angling.mjs?v=41';
+import { icon } from './angling.mjs?v=42';
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
@@ -23,7 +23,7 @@ export function createKeepers(g, angling) {
     const s = S();
     if (want && !s.net) { toast('Pip, the bug catcher in Honey Meadow, will lend you a net.'); return; }
     if (want === net) return;
-    net = want; if (net && angling.on) angling.toggle(false);
+    net = want; if (net) angling.toggle(false);
     document.body.classList.toggle('netting', net);
     $('btn-net').setAttribute('aria-pressed', net);
     $('netbar').hidden = !net;

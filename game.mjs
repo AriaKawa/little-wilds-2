@@ -1,19 +1,21 @@
 import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=41';
-import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=41';
+import { newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=41';
 import { createLand } from './land.mjs?v=41';
-import { createRenderer, GRASS_STYLES } from './render.mjs?v=41';
+import { createRenderer, GRASS_STYLES } from './render.mjs?v=42';
 import { createAudio } from './audio.mjs?v=41';
 import { spiritFace, useDeerSheet, useSheet } from './critters.mjs?v=41';
 import { fishingInit } from './fishing.mjs?v=41';
-import { createAngling } from './angling.mjs?v=41';
-import { createKeepers } from './keepers.mjs?v=41';
+import { createAngling } from './angling.mjs?v=42';
+import { createKeepers } from './keepers.mjs?v=42';
 import { findsInit, NETS } from './finds.mjs?v=41';
 
 const KEY = 'little-wilds-2-v2', CARDS_KEY = 'little-wilds-2-postcards', SOUND_KEY = 'little-wilds-2-muted', VOLUME_KEY = 'little-wilds-2-volume', GRASS_KEY = 'little-wilds-2-grass', MUSIC_KEY = 'little-wilds-2-music';
 const $ = id => document.getElementById(id);
 const fmt = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
-const load = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+const load = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(Error(`Could not load ${src}`)); im.src = src; });
 const nextFrame = () => new Promise(r => setTimeout(r, 30));
+const coarsePointer = matchMedia('(pointer: coarse)');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 const audio = createAudio();
 let images, world, land, view, s;
@@ -32,7 +34,7 @@ function toast(text, soft = false) {
   $('toast').textContent = text; $('toast').classList.add('show'); clearTimeout(toastTimer); toastUntil = performance.now() + 3200;
   toastTimer = setTimeout(() => { $('toast').classList.remove('show'); if (softToasts.length) setTimeout(() => toast(softToasts.shift(), true), 350); }, 3200);
 }
-let titleOn = false, tour = 0, tourAt = 0, held = [];
+let titleOn = false, titleFrom = null, tour = 0, tourAt = 0, held = [];
 let angling = null, keepers = null;
 // A new journal entry: a little gift of seeds, and a toast. Finishing a page raises all land income for good.
 function jot(key) {
@@ -65,7 +67,39 @@ function hoverCursor(x, y) {
 // While the title menu is up, big moments wait and play once you are back on the land.
 // While the title is up, big moments queue (the first few, in order) and play one after another once you are back.
 function banner(title, sub = '', ms = 5200) { if (titleOn) { if (held.length < 3) held.push([title, sub, ms]); return; } $('banner-title').textContent = title; $('banner-sub').textContent = sub; $('banner').classList.add('show'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => $('banner').classList.remove('show'), ms); }
-function save() { if (!s || preview) return; try { localStorage.setItem(KEY, encode(s)); } catch { toast('Saving is unavailable in this browser.'); } }
+const saveMessages = {
+  unreadable: 'The browser save could not be read. You can download it in Settings. This session is temporary.',
+  changed: 'The browser save changed in another tab. Export this session in Settings, or reload to use the newer save.',
+  unavailable: 'This browser could not save your progress. Export a copy in Settings before leaving.',
+};
+let lastWrittenSave = null, unreadableSave = null, saveIssue = '';
+function setSaveIssue(issue) {
+  if (saveIssue === issue) return;
+  saveIssue = issue;
+  const message = saveMessages[issue] || '';
+  for (const id of ['title-save', 'settings-save']) {
+    const notice = $(id);
+    if (notice) { notice.textContent = message; notice.hidden = !message; }
+  }
+  if (message && ready && !titleOn && !$('modal').open) toast(message);
+}
+function writeSave() {
+  try {
+    if (localStorage.getItem(KEY) !== lastWrittenSave) { setSaveIssue('changed'); return false; }
+    const raw = encode(s);
+    localStorage.setItem(KEY, raw);
+    lastWrittenSave = raw;
+    unreadableSave = null;
+    setSaveIssue('');
+    return true;
+  } catch {
+    setSaveIssue(unreadableSave === null ? 'unavailable' : 'unreadable');
+    return false;
+  }
+}
+function save() {
+  if (ready && !preview && unreadableSave === null) writeSave();
+}
 const loading = text => { $('loading').querySelector('span').textContent = text; return nextFrame(); };
 
 // The whole continent is built once, a land at a time behind the loading screen.
@@ -75,10 +109,21 @@ async function buildWorld() {
   world.dirty = i => { land.markCell(i); view?.floraCell(i); };
   world.waterMoved = z => land.markWater(z);
 }
+function readWorldSave(raw = null) {
+  const state = raw === null ? newLand() : decode(raw, world);
+  if (!state.levels || !Array.isArray(state.favours) || state.spirits.some(a => !a || !SPIRITS[a.type] || !Number.isFinite(a.x) || !Number.isFinite(a.y))) {
+    throw Error('Invalid continent data.');
+  }
+  state.upgrades ||= {};
+  fishingInit(state); findsInit(state);
+  if (!Array.isArray(state.traps) || !Array.isArray(state.digs)) throw Error('Invalid collection data.');
+  return state;
+}
 function attach() {
-  initObjects(s, world); fishingInit(s); findsInit(s);
+  initObjects(s, world);
   land.setSource(s.h, s.zones); land.flushAll();
-  view?.dispose(); quarters = []; glideTo = -1; mapFrom = null; preview = null;
+  view?.dispose(); quarters = []; glideTo = -1; mapFrom = null; preview = null; timelapse = null;
+  seedShown = rateSeeds = s.seeds; rate = 0; rateAt = performance.now(); $('rate').textContent = '';
   $('btn-preview').textContent = 'Preview'; $('btn-preview').setAttribute('aria-pressed', false); $('btn-map').textContent = 'Map';
   view = createRenderer($('world'), world, land, images); try { view.setGrass(localStorage.getItem(GRASS_KEY)); } catch {}
   view.onPet = (label, zone) => toast(`${label} has come back to ${ZONES[zone].name}.`);
@@ -131,18 +176,18 @@ function updateUI() {
   $('zone-name').textContent = ZONES[currentZone].name;
   $('zone-bar').style.width = pct * 100 + '%'; $('bloom-bar').style.width = (z.done ? bl * 100 : 0) + '%';
   $('zone-note').textContent = !z.open ? (gladeBuyable(s, currentZone) ? `Asleep · wake for ${fmt(gladePrice(s, currentZone))}` : `Asleep · ${LANDS[ZONES[currentZone].land].name}`) : z.bloomed ? 'Flourishing ✿' : z.done ? `Flowers ${Math.round(bl / .85 * 100)}%` : `${Math.floor(pct * 100)}% restored`;
-  if (modal === 'tend') refreshTend(); if (modal === 'valley') openValley();
+  if (modal === 'tend') refreshTend();
   angling?.hud();
 }
 function renderHint() {
   const h = $('hint');
   let text = '';
-  if (!s.touched) text = 'Hold and drag across the dead ground';
+  if (!s.touched) text = coarsePointer.matches ? 'Press and drag to grow the first patch of green' : 'Drag across the ground or hold Space to grow the first patch of green';
   else if (!s.revivedAny && s.age > 10 && !s.zones[0].done) text = 'Hold on a dead tree or stone to bring it back';
   else if (s.spirits.length === 1 && s.seeds >= spiritCost(s, 0)) text = 'Those seeds can wake another Mossling';
   else if (!s.bought && s.seeds >= cheapestGlade()) text = 'You can afford to wake a new glade. Click its sign';
   else if (!s.spirits.some(a => a.type === 2) && s.zones.some((z, i) => z.done && z.water < 0 && hasWater(world, i)) ) text = spiritOpen(s, 2) ? 'Riverbeds stay dry until a Rainwisp brings water' : `Riverbeds stay dry until a Rainwisp comes, after ${SPIRITS[2].need} restored glades`;
-  if (preview) text = '';
+  if (preview || angling.on || angling.placing || keepers.net) text = '';
   h.hidden = !text; if (text) h.textContent = text;
 }
 
@@ -154,7 +199,18 @@ function tendHTML() {
   }).join('');
 }
 function refreshTend() { for (const b of document.querySelectorAll('[data-up]')) { const u = UPGRADES.find(q => q.id === b.dataset.up), l = s.upgrades[u.id] || 0; b.disabled = l >= upgradeMax(s, u) || !upgradeOpen(s, u) || s.seeds < upgradeCost(s, u); } }
-function show(type, html) { releaseAll(); modal = type; $('modal-body').innerHTML = html; if (!$('modal').open) $('modal').showModal(); }
+function show(type, html) {
+  releaseAll();
+  const dialog = $('modal'), body = $('modal-body'), changed = modal !== type;
+  const restoreClose = changed || body.contains(document.activeElement);
+  modal = type; body.innerHTML = html;
+  const heading = body.querySelector('h2');
+  if (heading) { heading.id = 'modal-heading'; dialog.setAttribute('aria-labelledby', heading.id); }
+  else dialog.removeAttribute('aria-labelledby');
+  if (!dialog.open) dialog.showModal();
+  else if (restoreClose) $('close').focus({ preventScroll: true });
+  if (changed) dialog.scrollTop = 0;
+}
 $('close').onclick = () => $('modal').close();
 $('modal').addEventListener('close', () => { modal = ''; wake(); });
 $('modal').addEventListener('click', e => { if (e.target === $('modal')) { const r = $('modal').getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('modal').close(); } });
@@ -167,7 +223,7 @@ $('modal-body').addEventListener('click', e => {
   if (keepers.modalClick(e)) return;
   if (angling.modalClick(e)) return;
   const a = e.target.closest('[data-act]'); if (!a) return;
-  ({ land() { view.focusLand(landUnderView()); $('modal').close(); }, map() { $('modal').close(); toggleMap(true); }, exportSave, importSave, reset: resetSave, cards: openCards, journal: openJournal, valley: openValley })[a.dataset.act]?.();
+  ({ land() { view.focusLand(landUnderView()); $('modal').close(); }, map() { $('modal').close(); toggleMap(true); }, exportSave, importSave, downloadUnreadable, reset: resetSave, cards: openCards, journal: openJournal, valley: openValley })[a.dataset.act]?.();
 });
 
 /* The land under the camera, glade by glade */
@@ -175,7 +231,7 @@ function openValley() {
   const l = landUnderView(), zs = ZONES.filter(z => z.land === l).sort((a, b) => a.py - b.py || a.px - b.px);
   const cells = zs.map(z => { const st = s.zones[z.id], pct = zonePct(s, world, z.id), buy = gladeBuyable(s, z.id); return `<button class="vz ${st.open ? '' : buy ? 'wake' : 'locked'} ${st.done ? 'done' : ''} ${st.bloomed ? 'bloomed' : ''}" data-focus="${z.id}"><b>${z.name}</b><small>${buy ? `wake for ${fmt(gladePrice(s, z.id))}` : !st.open ? 'asleep' : st.bloomed ? 'flourishing ✿' : st.done ? 'restored' : Math.floor(pct * 100) + '%'}</small></button>`; }).join('');
   const html = `<h2>${LANDS[l].name}</h2><p class="sub">${landTouched(s, l) ? `${(landPct(s, world, l) * 100).toFixed(1)}% restored.` : 'Still asleep.'} Choose a glade to visit, or wake one that touches open ground.</p><div class="valley">${cells}</div><div class="row"><button class="wood" data-act="land">See all of ${LANDS[l].name}</button><button class="wood" data-act="map">See the whole map</button></div>`;
-  if (modal === 'valley' && $('modal-body').firstChild) { const scroll = $('modal').scrollTop; $('modal-body').innerHTML = html; $('modal').scrollTop = scroll; } else show('valley', html);
+  show('valley', html);
 }
 $('zonechip').onclick = () => { audio.start(); openValley(); };
 
@@ -183,29 +239,45 @@ $('zonechip').onclick = () => { audio.start(); openValley(); };
 function showTitle() {
   if ($('modal').open) $('modal').close();
   releaseAll(); thenX = null; $('btn-then').setAttribute('aria-pressed', false); if (preview) togglePreview();
-  angling?.toggle(false);
+  angling.toggle(false); keepers.toggleNet(false);
+  const c = view.cam;
+  titleFrom = ready ? [c.tx, c.ty, c.tz] : null;
   titleOn = true; document.body.classList.add('title'); $('title').hidden = false; tourAt = 0;
-  $('title-play').textContent = s.touched ? 'Continue' : 'Begin';
-  $('title-tag').textContent = s.touched ? 'Your continent, quietly growing.' : 'A dead continent, waiting for you.';
+  canvas.inert = $('hud').inert = true;
+  updateTitleCopy();
   titleRecords();
+  $('title').querySelector('[data-title="play"]').focus({ preventScroll: true });
+}
+function updateTitleCopy() {
+  $('title-play').textContent = s.touched ? 'Continue' : 'Begin';
+  $('title-tag').textContent = s.touched ? 'Your continent, quietly growing.' : 'A sleeping continent, waiting for you.';
 }
 function titleRecords() {
-  const glades = s.zones.filter(z => z.done).length, lands = mapsDone(s);
+  const glades = s.zones.filter(z => z.done).length;
   $('title-records').innerHTML = `<span><small>Seeds</small><b><i class="ico ico-seed"></i>${fmt(s.seeds)}</b></span><span><small>Earning</small><b>${rate >= 1 ? fmt(rate) + '/s' : '–'}</b></span><span><small>Glades restored</small><b>${glades} / ${ZONES.length}</b></span><span><small>Lands restored</small><b>${REGIONS.filter(R => R.lands.every(l => landDone(s, l))).length} / ${REGIONS.length}</b></span>`;
 }
 function hideTitle() {
   if (!titleOn) return;
   titleOn = false; document.body.classList.remove('title'); $('title').hidden = true; wake();
-  currentZone = firstOpen(); view.focusZone(currentZone); gliding = performance.now() + 1800;
-  if (held.length) { let at = 0; for (const [a, b, c] of held) { setTimeout(() => banner(a, b, c), at); at += c + 300; } held = []; } else if (!s.touched) banner('Little Wilds', 'Nothing has grown here in a long time.', 4500);
+  canvas.inert = $('hud').inert = false;
+  if (titleFrom) {
+    view.glide(...titleFrom);
+    titleFrom = null;
+    gliding = performance.now() + 1800;
+  } else {
+    currentZone = firstOpen();
+    view.focusZone(currentZone, true);
+  }
+  if (held.length) { let at = 0; for (const [a, b, c] of held) { setTimeout(() => banner(a, b, c), at); at += c + 300; } held = []; }
   canvas.focus({ preventScroll: true });
+  if (saveIssue) toast(saveMessages[saveIssue]);
 }
 // The camera wanders the glades you have woken, a little wider than play, lingering on each.
 function stepTour(now) {
-  if (now < tourAt) return;
+  if (now < tourAt || (tourAt && reducedMotion.matches)) return;
   const open = s.zones.map((z, i) => z.open ? i : -1).filter(i => i >= 0), z = open.length ? open[tour++ % open.length] : 0;
   view.focusZone(z); const c = view.cam;
-  view.glide(c.tx + (hash(tour, 1, 9) - .5) * 160, c.ty + (hash(tour, 2, 9) - .5) * 100, c.tz * (.62 + hash(tour, 3, 9) * .2));
+  if (!reducedMotion.matches) view.glide(c.tx + (hash(tour, 1, 9) - .5) * 160, c.ty + (hash(tour, 2, 9) - .5) * 100, c.tz * (.62 + hash(tour, 3, 9) * .2));
   if (!tourAt) { c.x = c.tx; c.y = c.ty; c.z = c.tz; }
   tourAt = now + 9000;
 }
@@ -216,20 +288,66 @@ $('title').addEventListener('click', e => {
 });
 
 /* Menu */
-function openMenu() {
-  show('menu', `<h2>Little Wilds 2</h2><p class="sub">Bring a dead continent back to life, one glade at a time.</p>
-  <label class="volume">Volume <input id="volume" type="range" min="0" max="100" value="${Math.round(audio.volume * 100)}"></label><label class="volume check"><input id="music" type="checkbox"${audio.music ? ' checked' : ''}> Quiet music</label><label class="volume">Grass style <select id="grass">${Object.entries(GRASS_STYLES).map(([k, v]) => `<option value="${k}"${k === view.grass ? ' selected' : ''}>${v}</option>`).join('')}</select></label><div class="row"><button class="wood" data-act="cards">Postcards</button><button class="wood" data-act="journal">Journal</button><button class="wood" data-act="exportSave">Export save</button><button class="wood" data-act="importSave">Import save</button><button class="wood" data-act="reset">Start over</button></div>
-  <p class="sub" style="margin-top:14px">Hold and drag: heal the land.<br>Drag a spirit: carry it somewhere.<br>Click a sign on a sleeping glade: wake it with seeds.<br>Click a deer or rabbit: give it a pat. Butterflies, birds, fish and villagers like a tap too.<br>Right-drag, two fingers or arrow keys: look around.<br>Wheel or pinch: zoom. M: the whole map. H: hide the interface.</p><input type="file" id="file" accept=".json,application/json" hidden>`);
-}
 $('btn-menu').onclick = () => { audio.start(); showTitle(); };
-function openSettings() { openMenu(); $('volume').oninput = e => { audio.setVolume(e.target.value / 100); try { localStorage.setItem(VOLUME_KEY, audio.volume); } catch {} };
+function openSettings() {
+  show('menu', `<h2>Settings</h2>
+  <label class="volume">Volume <input id="volume" type="range" min="0" max="100" value="${Math.round(audio.volume * 100)}"></label>
+  <label class="volume check"><input id="mute" type="checkbox"${audio.muted ? ' checked' : ''}> Mute sound</label>
+  <label class="volume check"><input id="music" type="checkbox"${audio.music ? ' checked' : ''}> Quiet music</label>
+  <label class="volume">Grass style <select id="grass">${Object.entries(GRASS_STYLES).map(([k, v]) => `<option value="${k}"${k === view.grass ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+  <h3 class="settings-section">Save data</h3><p class="save-notice" id="settings-save" role="status"${saveIssue ? '' : ' hidden'}>${saveMessages[saveIssue] || ''}</p>
+  <div class="row"><button class="wood" data-act="exportSave">Export save</button><button class="wood" data-act="importSave">Import save</button>${unreadableSave === null ? '' : '<button class="wood" data-act="downloadUnreadable">Download unreadable save</button>'}<button class="wood" data-act="reset">Start over</button></div>
+  <h3 class="settings-section">Controls</h3>
+  <p class="sub">Hold and drag or hold Space to restore the land. Drag a spirit to carry it. Tap or click a sleeping glade’s sign to wake it with seeds.</p>
+  <p class="sub">Right-drag, drag with two fingers, or use the arrow keys to look around. Scroll, pinch, or press + or − to zoom. Press M for the map and H to hide or show the interface.</p>
+  <input type="file" id="file" accept=".json,application/json" hidden>`);
+  $('volume').oninput = e => { audio.setVolume(e.target.value / 100); try { localStorage.setItem(VOLUME_KEY, audio.volume); } catch {} };
+  $('mute').onchange = e => setSoundMuted(e.target.checked);
   $('grass').onchange = e => { view.setGrass(e.target.value); try { localStorage.setItem(GRASS_KEY, view.grass); } catch {} };
-  $('music').onchange = e => { audio.start(); audio.setMusic(e.target.checked); try { localStorage.setItem(MUSIC_KEY, e.target.checked ? '1' : ''); } catch {} }; };
-function exportSave() { save(); const a = document.createElement('a'), u = URL.createObjectURL(new Blob([encode(s)], { type: 'application/json' })); a.href = u; a.download = 'little-wilds-2-save.json'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1000); }
-function importSave() {
-  const f = $('file'); f.onchange = async () => { try { const file = f.files[0]; if (!file || file.size > 4e6) throw 0; const text = await file.text(); const next = decode(text, world); if (!confirm('Replace your whole continent?')) return; s = next; attach(); save(); $('modal').close(); } catch { toast('That is not a Little Wilds 2 save.'); } }; f.click();
+  $('music').onchange = e => { audio.start(); audio.setMusic(e.target.checked); try { localStorage.setItem(MUSIC_KEY, e.target.checked ? '1' : ''); } catch {} };
 }
-function resetSave() { if (!confirm('Start again from barren ground? This erases your progress.')) return; s = newLand(); attach(); try { localStorage.removeItem(CARDS_KEY); } catch {} save(); $('modal').close(); }
+function downloadSave(raw, filename) {
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+  link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportSave() { downloadSave(encode(s), 'little-wilds-2-save.json'); }
+function downloadUnreadable() { if (unreadableSave !== null) downloadSave(unreadableSave, 'little-wilds-2-unreadable-save.json'); }
+function importSave() {
+  const input = $('file');
+  input.value = '';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    let next;
+    try {
+      if (file.size > 4e6) throw Error('Save file is too large.');
+      next = readWorldSave(await file.text());
+    } catch {
+      if (input.isConnected) {
+        const notice = $('settings-save');
+        notice.textContent = 'This file could not be read as a Little Wilds 2 save.';
+        notice.hidden = false;
+      }
+      return;
+    }
+    if (input.isConnected && $('modal').open && confirm('Replace your whole continent with this save?')) replaceWorld(next);
+  };
+  input.click();
+}
+function replaceWorld(next) {
+  s = next; attach();
+  const saved = writeSave();
+  $('modal').close();
+  if (titleOn) { updateTitleCopy(); titleRecords(); titleFrom = null; tourAt = 0; }
+  return saved;
+}
+function resetSave() {
+  if (confirm('Start again from barren ground? This erases your progress.') && replaceWorld(readWorldSave())) {
+    try { localStorage.removeItem(CARDS_KEY); } catch {}
+  }
+}
 const readCards = () => { try { return JSON.parse(localStorage.getItem(CARDS_KEY) || '[]'); } catch { return []; } };
 function openCards() { const list = readCards(); show('cards', `<h2>Postcards</h2><p class="sub">The lands you have brought back.</p>` + (list.length ? `<div class="cards">${list.map(c => `<figure><img src="${c.now}" alt="${c.name} restored"><figcaption>${c.name}</figcaption></figure>`).join('')}</div>` : '<p>Finish a whole land to keep its postcard here.</p>')); }
 function openJournal() {
@@ -267,7 +385,7 @@ function toggleMap(out = !mapFrom) {
 function togglePreview() {
   releaseAll(); thenX = null; $('btn-then').setAttribute('aria-pressed', false);
   if (!preview) {
-    angling.toggle(false);
+    angling.toggle(false); keepers.toggleNet(false);
     preview = { h: s.h, zones: s.zones, objHp: s.objHp, active: world.active.slice(), pend: world.pend.slice() };
     s.h = new Float32Array(CN); for (let i = 0; i < CN; i++) if (!world.blocked[i]) s.h[i] = .99;
     s.zones = s.zones.map(z => ({ ...z, open: true, done: true, bloomed: true, water: 1, sweep: -1 }));
@@ -281,6 +399,8 @@ function togglePreview() {
   }
   land.setSource(s.h, s.zones); land.flushAll(); view.allFlora(); view.regreet(); quarters = []; last = performance.now();
   $('btn-preview').setAttribute('aria-pressed', !!preview); $('btn-preview').textContent = preview ? 'Back to mine' : 'Preview';
+  document.body.classList.toggle('preview', !!preview);
+  $('btn-bag').disabled = !!preview;
   updateUI();
 }
 $('btn-preview').onclick = () => { audio.start(); togglePreview(); };
@@ -292,13 +412,24 @@ $('btn-net').onclick = () => { audio.start(); wake(); if (preview) { toast('Swit
 $('btn-bag').onclick = () => { audio.start(); angling.openBag(); };
 $('btn-then').onclick = () => { $('banner').classList.remove('show'); thenX = thenX == null ? innerWidth / 2 : null; $('btn-then').setAttribute('aria-pressed', thenX != null); if (thenX != null) toast('Drag across the land to compare. Press again to finish.'); };
 const syncSound = () => { $('btn-sound').textContent = audio.muted ? 'Muted' : 'Sound'; $('btn-sound').setAttribute('aria-pressed', audio.muted); };
-$('btn-sound').onclick = () => { audio.start(); audio.setMuted(!audio.muted); try { localStorage.setItem(SOUND_KEY, audio.muted ? '1' : ''); } catch {} syncSound(); };
+function setSoundMuted(muted) {
+  audio.start(); audio.setMuted(muted);
+  try { localStorage.setItem(SOUND_KEY, muted ? '1' : ''); } catch {}
+  syncSound();
+}
+$('btn-sound').onclick = () => setSoundMuted(!audio.muted);
 try { if (localStorage.getItem(MUSIC_KEY)) audio.setMusic(true); if (localStorage.getItem(SOUND_KEY)) audio.setMuted(true); const v = parseFloat(localStorage.getItem(VOLUME_KEY)); if (v >= 0 && v <= 1) audio.setVolume(v); } catch {} syncSound();
 
 /* Input */
 const canvas = $('world');
 function wake() { lastActive = performance.now(); document.body.classList.remove('quiet'); }
-function releaseAll() { pointer.holding = false; pointer.kb = false; if (carry) { carry.held = false; carry = null; } panning = false; }
+function releaseAll() {
+  pointers.clear();
+  pointer.holding = false; pointer.kb = false; pointer.id = null;
+  if (carry) { carry.held = false; carry = null; }
+  panning = false; pinch = 0;
+}
+$('hud').addEventListener('focusin', wake);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('pointerdown', e => {
   if (!ready || $('modal').open || titleOn) return;
@@ -347,33 +478,52 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 function endPointer(e) {
-  if (!pointers.has(e.pointerId)) return;
-  pointers.delete(e.pointerId);
-  if (carry && e.pointerId === pointer.id) { const c = view.toCell(e.clientX, e.clientY), i = Math.round(Math.max(0, Math.min(CH - 1, c.y + .6))) * CW + Math.round(Math.max(0, Math.min(CW - 1, c.x))); if (s.zones[world.zone[i]].open && !world.blocked[i]) { carry.x = i % CW; carry.y = Math.floor(i / CW); } else toast('That land is still asleep.'); carry.held = false; carry.tx = -1; carry = null; save(); }
+  if (!pointers.delete(e.pointerId)) return;
+  if (carry && e.pointerId === pointer.id) {
+    const dropped = e.type === 'pointerup';
+    if (dropped) {
+      const c = view.toCell(e.clientX, e.clientY);
+      const x = Math.round(Math.max(0, Math.min(CW - 1, c.x))), y = Math.round(Math.max(0, Math.min(CH - 1, c.y + .6)));
+      const i = y * CW + x;
+      if (s.zones[world.zone[i]].open && !world.blocked[i]) { carry.x = x; carry.y = y; }
+      else toast('Drop the spirit on open ground in a woken glade.');
+    }
+    carry.held = false; carry.tx = -1; carry = null;
+    if (dropped) save();
+  }
   if (e.pointerId === pointer.id) { pointer.holding = false; pointer.id = null; }
   if (!pointers.size) { panning = false; pinch = 0; if (e.pointerType === 'touch') pointer.on = false; }
 }
-canvas.addEventListener('pointerup', endPointer); canvas.addEventListener('pointercancel', endPointer);
+for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(event, endPointer);
 canvas.addEventListener('pointerleave', () => { if (!pointers.size) pointer.on = false; });
 canvas.addEventListener('wheel', e => { e.preventDefault(); wake(); if (mapFrom) { mapFrom = null; $('btn-map').textContent = 'Map'; } view.zoomAt(Math.exp(-e.deltaY * .0013), e.clientX, e.clientY); }, { passive: false });
 addEventListener('keydown', e => {
-  if (!ready || $('modal').open) return;
-  if (titleOn) { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); audio.start(); hideTitle(); } return; }
-  if (!preview && e.code === 'KeyF') keepers.toggleNet(false);
+  if (!ready || titleOn || $('modal').open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.code === 'Escape' && !e.repeat) {
+    if (keepers.net) keepers.toggleNet(false);
+    else if (angling.on || angling.placing) angling.toggle(false);
+    else showTitle();
+    return;
+  }
+  if (e.code === 'Space' && e.target instanceof HTMLButtonElement) return;
+  if (!preview && e.code === 'KeyF' && !e.repeat) keepers.toggleNet(false);
   if (!preview && keepers.keyDown(e)) { wake(); return; }
   if (!preview && angling.keyDown(e, performance.now())) { wake(); return; }
-  if (e.code === 'Escape') { if (keepers.net) { keepers.toggleNet(false); return; } if (angling.on) { angling.toggle(false); return; } showTitle(); return; }
+  if (e.code === 'KeyH') {
+    if (!e.repeat && document.body.classList.toggle('quiet')) canvas.focus({ preventScroll: true });
+    lastActive = performance.now();
+    return;
+  }
   wake();
   const moves = { ArrowLeft: [90, 0], ArrowRight: [-90, 0], ArrowUp: [0, 90], ArrowDown: [0, -90], KeyA: [90, 0], KeyD: [-90, 0], KeyW: [0, 90], KeyS: [0, -90] };
   if (moves[e.code]) { e.preventDefault(); view.pan(...moves[e.code]); }
-  if (e.code === 'Space' && !e.repeat && !preview) { e.preventDefault(); audio.start(); pointer.holding = true; pointer.kb = true; if (!pointer.on) { pointer.x = innerWidth / 2; pointer.y = innerHeight / 2; pointer.on = true; } }
+  if (e.code === 'Space' && !preview) { e.preventDefault(); if (!e.repeat) { audio.start(); pointer.holding = true; pointer.kb = true; pointer.since = 0; if (!pointer.on) { pointer.x = innerWidth / 2; pointer.y = innerHeight / 2; pointer.on = true; } } }
   if (e.key === '+' || e.key === '=') view.zoomAt(1.2); if (e.key === '-') view.zoomAt(1 / 1.2);
   if (e.code === 'KeyM' && !e.repeat) toggleMap();
   if (e.code === 'KeyP' && !e.repeat) togglePreview();
-  if (e.code === 'KeyH') { document.body.classList.toggle('quiet'); lastActive = -1e9; }
 });
 addEventListener('keyup', e => { angling?.keyUp(e); if (e.code === 'Space' && pointer.kb) { pointer.holding = false; pointer.kb = false; } });
-addEventListener('blur', () => { pointers.clear(); releaseAll(); });
+addEventListener('blur', releaseAll);
 
 /* Events from the simulation: the game's big moments. */
 function handle(ev, now, quiet = false) {
@@ -406,8 +556,9 @@ function returnFrom(seconds) {
     timelapse = { pre, field: pre.slice(), moved: Uint32Array.from(moved), start: performance.now(), dur: 5200 };
     land.setField(timelapse.field); view.setShown(timelapse.field); land.markAll();
   }
-  const mins = Math.round(r.seconds / 60);
-  banner('While you were away', `${mins < 90 ? mins + ' minutes' : (mins / 60).toFixed(1) + ' hours'} of quiet growth · ${fmt(r.seeds)} seeds`, 5600);
+  const mins = Math.floor(r.seconds / 60);
+  const duration = mins === 0 ? 'Less than a minute' : mins === 1 ? '1 minute' : mins < 90 ? mins + ' minutes' : (mins / 60).toFixed(1) + ' hours';
+  banner('While you were away', `${duration} of quiet growth · ${fmt(r.seeds)} seeds`, 5600);
 }
 function stepTimelapse(now) {
   const t = timelapse, k = Math.min(1, (now - t.start) / t.dur), f = t.field, target = s.h;
@@ -440,7 +591,11 @@ function frame(now) {
   if (now - rateAt > 1000) { const d = s.seeds - rateSeeds; if (d >= 0) rate += (d / ((now - rateAt) / 1000) - rate) * .35; rateSeeds = s.seeds; rateAt = now; $('rate').textContent = rate >= 1 ? '+' + fmt(rate) + '/s' : ''; }
   if (titleOn) { stepTour(now); if (now - lastUI > 200) titleRecords(); }
   view.draw(s, now, dt, { carry, fishing: angling.state, shadows: angling.shadows, marks: angling.marks, mouse: pointer.on ? pointer : null, pointer: pointer.on && !carry && !titleOn && !angling.on && !angling.placing && !keepers.net && view.cam.z >= .9 ? pointer : null, bugs: titleOn ? null : keepers.bugs, holes: keepers.holes, swing: keepers.swing, netRing: keepers.net && pointer.on && !titleOn ? { x: pointer.x, y: pointer.y, r: NETS[s.net]?.reach || 9 } : null, holding: pointer.holding, then: thenX, title: titleOn, camSpeed: titleOn ? .35 : now < gliding ? 2.2 : 3.2 });
-  if (now - lastUI > 200) { lastUI = now; updateUI(); renderHint(); const ear = view.hearing(); audio.hear(ear.sources, ear.near, .2); if (!pointers.size && !$('modal').open && thenX == null && now - lastActive > 14000) document.body.classList.add('quiet'); }
+  if (now - lastUI > 200) {
+    lastUI = now; updateUI(); renderHint();
+    const ear = view.hearing(); audio.hear(ear.sources, ear.near, .2);
+    if (!pointers.size && !$('modal').open && !$('hud').contains(document.activeElement) && thenX == null && !angling.on && !angling.placing && !keepers.net && now - lastActive > 14000) document.body.classList.add('quiet');
+  }
   if (now - lastSave > 6000) { lastSave = now; save(); }
 }
 document.addEventListener('visibilitychange', () => {
@@ -458,18 +613,27 @@ async function main() {
     useSheet('imp', imp);
     images = { world: worldImg, spirits, pets, flyers, fish, folk, raincloud, places, items, portraits, keepers: keepersImg, stalls, biomes: [null, ...biomes] };
     await buildWorld();
-    let raw = null;
-    try { raw = localStorage.getItem(KEY); } catch { raw = null; }
-    try { s = raw ? decode(raw, world) : newLand(); } catch (e) { console.error(e); s = newLand(); toast('That save could not be read, so the continent starts fresh.'); }
+    try { lastWrittenSave = localStorage.getItem(KEY); } catch { setSaveIssue('unavailable'); }
+    try { s = readWorldSave(lastWrittenSave); }
+    catch (e) {
+      console.warn('Could not read the browser save.', e);
+      unreadableSave = lastWrittenSave; s = readWorldSave();
+      setSaveIssue('unreadable');
+    }
     const away = (Date.now() - (s.last || Date.now())) / 1000;
     await loading('Waking the spirits…');
     attach();
     if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__lw = { togglePreview, get preview() { return !!preview; }, get s() { return s; }, get w() { return world; }, get v() { return view; }, get land() { return land; }, get angling() { return angling; }, get keepers() { return keepers; }, wakeGlade, toggleMap, celebrate, tick: (n, dt = .5) => { const ev = []; for (let k = 0; k < n; k++) tick(s, world, dt, ev); handle(ev, performance.now()); land.markAll(); view.allFlora(); updateUI(); return ev.length; }, grant: n => { s.seeds += n; updateUI(); } };
-    ready = true; $('loading').style.display = 'none'; updateUI();
+    updateUI(); showTitle();
+    ready = true;
     if (s.touched && s.season) jot(s.season);
-    showTitle();
-    if (raw) returnFrom(away);
+    if (lastWrittenSave !== null && unreadableSave === null) returnFrom(away);
+    $('loading').hidden = true;
     requestAnimationFrame(frame);
-  } catch (e) { console.error(e); $('loading').querySelector('span').textContent = 'The artwork could not load. Refresh to try again.'; }
+  } catch (e) {
+    ready = false; console.error(e);
+    $('loading').querySelector('span').textContent = 'The continent could not load. Check your connection and try again.';
+    $('retry').hidden = false;
+  }
 }
 main();

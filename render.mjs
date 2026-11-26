@@ -196,7 +196,8 @@ export function createRenderer(canvas, world, land, images) {
   let anchor = null;
   function focusZone(z, snap = false) {
     anchor = null;
-    cam.tx = ZONES[z].px; cam.ty = ZONES[z].py; cam.tz = clamp(Math.min((W - 40) / 340, (H - 200) / 230), minZoom(), 7);
+    // Glade views need enough zoom to paint, even on a short or narrow screen.
+    cam.tx = ZONES[z].px; cam.ty = ZONES[z].py; cam.tz = clamp(Math.min((W - 40) / 340, (H - 200) / 230), Math.max(1, minZoom()), 7);
     clampCam(); if (snap) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
   }
   function focusAll() { anchor = null; cam.tx = TW / 2; cam.ty = TH / 2; cam.tz = minZoom(); clampCam(); }
