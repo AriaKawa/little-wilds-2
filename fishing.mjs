@@ -1,6 +1,6 @@
 // Fishing: what bites where, the backpack, rods, Old Tam's market, and the quests of the pier fisherman and the
 // demon lord. Rules only, no drawing: the cast, the reel and the windows live in angling.mjs.
-import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=42';
+import { TW, TH, LW, LH, CELL, CW, ZONES, LANDS, SEA, LAKE } from './world.mjs?v=43';
 
 // Each fish: its icon (a cell of assets/items.png, sixteen to a row), its tier (1 common, 2 uncommon, 3 rare,
 // 4 legendary), base worth in seeds, how hard it fights (0 to 1), the waters it lives in, how common it is there,
@@ -138,7 +138,8 @@ export function fishWhere(f) {
   return parts.join(' · ').replace(/^./, c => c.toUpperCase());
 }
 // What a fish sells for grows with what the restored land earns, so a catch is worth landing all game long.
-export const fishWorth = (f, inc) => Math.max(1, Math.round(f.v * (1 + inc * .05)));
+// About half its base value in seconds of income: a catch is worth landing all game long.
+export const fishWorth = (f, inc) => Math.max(1, Math.round(f.v * (1 + inc * .5)));
 // Old Tam's market pays double for one fish each day.
 const WANTED = CATCHES.filter(f => f.tier >= 1 && f.tier <= 3 && !f.night && !f.region && !f.season && !f.rain);
 export const wantedFish = s => WANTED[Math.floor((s.age || 0) / 480 * 7.3) % WANTED.length];
@@ -230,7 +231,7 @@ export const ferryOpen = (s, lands) => (s.quests?.fisher?.n || 0) >= 6 || lands 
 export const ferryCost = inc => questSeeds(20, inc);
 
 /* The aquarium in Sunfall: one of each fish, donated, adds to all earnings for good, more for rarer fish. */
-export const TANK_BONUS = [0, .01, .015, .025, .05];
+export const TANK_BONUS = [0, .006, .009, .014, .028]; // all of them together: +40%
 export const canDonate = f => !f.junk && !f.treasure;
 export const tankBonus = s => Object.keys(s.tank || {}).reduce((a, id) => a + (FISH_BY[id] ? TANK_BONUS[FISH_BY[id].tier] : 0), 0);
 export const tankMax = () => CATCHES.filter(canDonate).reduce((a, f) => a + TANK_BONUS[f.tier], 0);
@@ -259,7 +260,7 @@ export function emptyTrap(s, t, r = Math.random) {
 
 /* Treasure: a chest that drifts across the reel. Hold it in the band to keep it. */
 export function openChest(s, inc, r = Math.random) {
-  const out = { seeds: Math.round((3 + r() * 4) * (25 + inc * 3)) };
+  const out = { seeds: questSeeds(3 + r() * 4, inc) };
   s.seeds += out.seeds;
   if (r() < .35 && bagAdd(s, 'pearl')) out.pearl = true;
   return out;
@@ -289,16 +290,16 @@ export const GIVERS = {
     Q(4, 'The dragon of the lake', 'My last wish. In the great lake lives a koi older than the hills, with horns and whiskers. Only a Demonbone rod could hold it, they say.', [['dragon', 1]], 'A dragon. A real dragon, in my hands. I can go fishing in peace now, friend. Forever.', { seeds: 150 }),
   ], orders: ['perch', 'trout', 'bass', 'bluegill', 'catfish', 'rainbow', 'pike', 'eel', 'tang', 'puffer', 'seahorse', 'carp'] },
   lord: { name: 'Lord Cinderbrow', role: 'Master of Demonreach', portrait: 0, quests: [
-    Q(2, 'Tribute for the horde', 'So, a gardener dares my steps. My imps are RAVENOUS, mortal. Five fish, any kind, and I may let you keep your little spirits.', [['any', 5]], 'Hmph. Adequate. The imps adore you now, which is disgusting. Take my blessing: your lands will earn a little more.', { seeds: 10, boon: .05 }),
+    Q(2, 'Tribute for the horde', 'So, a gardener dares my steps. My imps are RAVENOUS, mortal. Five fish, any kind, and I may let you keep your little spirits.', [['any', 5]], 'Hmph. Adequate. The imps adore you now, which is disgusting. Take my blessing: your lands will earn a little more.', { seeds: 10, boon: .03 }),
     Q(2, 'Fire from the deep', 'The lavafin swims only in MY waters. Bring me two, and I will carve you a rod from the bones of something terrible.', [['lavafin', 2]], 'Exquisite. Behold: the Demonbone rod. Try not to scream when it bites.', { seeds: 20, rod: 4 }),
-    Q(3, 'A dreadful stew', 'I hunger for stew. A dreadful stew. It wants an eel, a pufferfish and a mudskipper. Do NOT ask what else goes in it.', [['eel', 1], ['puffer', 1], ['mudskipper', 1]], 'Mmm. Bubbling nicely. Here, a bigger sack. Carry my glory further.', { seeds: 25, bag: 4, boon: .05 }),
-    Q(3, 'The crimson realm reborn', 'My isle lies grey and dead. Restore every glade of Demonreach so that its crimson may burn again.', [], 'LOOK at it. Crimson as a dragon\'s blush. You may consider yourself... a friend of the throne.', { seeds: 60, boon: .1 }),
-    Q(3, 'Cursed delicacies', 'Fish from my waters sometimes come up... changed. Glowing. Grumpy. Delicious. Bring me three cursed fish of any kind.', [['any', 3, true]], 'Still twitching! Exquisite. Take this, and bring me every cursed fish you find: I pay far better than that sailor of yours.', { seeds: 35, boon: .05 }),
-    Q(3, 'Creatures of the dark', 'I collect things of the night. An angler, a nightfin and a moonfish. For my aquarium. It is very gloomy. I adore it.', [['angler', 1], ['nightfin', 1], ['moonfish', 1]], 'They glow so beautifully in the gloom. You have taste, for a mortal.', { seeds: 45, boon: .05 }),
-    Q(3, 'My stolen boot', 'A fish stole my favourite boot. I will not elaborate. Find it.', [['boot', 1]], 'MY BOOT! The fish shall pay. Not you. You may have the gratitude of a demon, which is rarer than you think.', { seeds: 40, boon: .05 }),
-    Q(4, 'A crown for a king', 'There is a salmon in your rivers that dares to wear a CROWN. Bring it to me. And a capfish, for its little hat.', [['salmon', 1], ['capfish', 1]], 'Now *I* have two crowns and a hat. As it should be.', { seeds: 90, boon: .05 }),
-    Q(4, 'The ghosts in my moat', 'My moat is too ordinary. I want ghosts in it. Two ghost minnows.', [['ghost', 2]], 'Delightfully haunting. My moat is the envy of the underworld.', { seeds: 100, boon: .1 }),
-    Q(4, 'Dragon\'s ransom', 'The dragon koi of your great lake. Bring it to me and you shall have my eternal favour. I do not offer this lightly.', [['dragon', 1]], 'Magnificent. Kneel. No, I am joking. Stand, friend of Demonreach. All that you grow shall flourish.', { seeds: 200, boon: .15 }),
+    Q(3, 'A dreadful stew', 'I hunger for stew. A dreadful stew. It wants an eel, a pufferfish and a mudskipper. Do NOT ask what else goes in it.', [['eel', 1], ['puffer', 1], ['mudskipper', 1]], 'Mmm. Bubbling nicely. Here, a bigger sack. Carry my glory further.', { seeds: 25, bag: 4, boon: .03 }),
+    Q(3, 'The crimson realm reborn', 'My isle lies grey and dead. Restore every glade of Demonreach so that its crimson may burn again.', [], 'LOOK at it. Crimson as a dragon\'s blush. You may consider yourself... a friend of the throne.', { seeds: 60, boon: .06 }),
+    Q(3, 'Cursed delicacies', 'Fish from my waters sometimes come up... changed. Glowing. Grumpy. Delicious. Bring me three cursed fish of any kind.', [['any', 3, true]], 'Still twitching! Exquisite. Take this, and bring me every cursed fish you find: I pay far better than that sailor of yours.', { seeds: 35, boon: .03 }),
+    Q(3, 'Creatures of the dark', 'I collect things of the night. An angler, a nightfin and a moonfish. For my aquarium. It is very gloomy. I adore it.', [['angler', 1], ['nightfin', 1], ['moonfish', 1]], 'They glow so beautifully in the gloom. You have taste, for a mortal.', { seeds: 45, boon: .03 }),
+    Q(3, 'My stolen boot', 'A fish stole my favourite boot. I will not elaborate. Find it.', [['boot', 1]], 'MY BOOT! The fish shall pay. Not you. You may have the gratitude of a demon, which is rarer than you think.', { seeds: 40, boon: .03 }),
+    Q(4, 'A crown for a king', 'There is a salmon in your rivers that dares to wear a CROWN. Bring it to me. And a capfish, for its little hat.', [['salmon', 1], ['capfish', 1]], 'Now *I* have two crowns and a hat. As it should be.', { seeds: 90, boon: .03 }),
+    Q(4, 'The ghosts in my moat', 'My moat is too ordinary. I want ghosts in it. Two ghost minnows.', [['ghost', 2]], 'Delightfully haunting. My moat is the envy of the underworld.', { seeds: 100, boon: .06 }),
+    Q(4, 'Dragon\'s ransom', 'The dragon koi of your great lake. Bring it to me and you shall have my eternal favour. I do not offer this lightly.', [['dragon', 1]], 'Magnificent. Kneel. No, I am joking. Stand, friend of Demonreach. All that you grow shall flourish.', { seeds: 200, boon: .08 }),
   ], orders: ['lavafin', 'any', 'koi', 'frostfin', 'pike', 'eel', 'angler', 'nightfin'] },
 };
 GIVERS.lord.quests[3].want = [{ glades: DEMON, n: 18, label: 'Demonreach glades restored' }];
@@ -311,15 +312,16 @@ export function questOf(s, g) {
   const k = q.n - G.quests.length, pick = G.orders[(k * 5 + 3) % G.orders.length], want = pick === 'any' ? 6 + k % 4 : FISH_BY[pick].tier >= 3 ? 1 + k % 2 : 2 + k % 3;
   const name = pick === 'any' ? 'fish of any kind' : FISH_BY[pick].name.toLowerCase() + (want > 1 ? 's' : '');
   return g === 'lord'
-    ? k % 3 === 2 ? { stars: 3, title: 'Cursed tribute', ask: `My larder lacks a certain... glow. ${2 + k % 3} cursed fish, any kind.`, want: [{ fish: 'any', n: 2 + k % 3, cursed: true }], thanks: 'Ahh. Still warm with wickedness.', reward: { seeds: 14 + k * 2, boon: .01 }, order: true }
-    : { stars: 2, title: 'Tribute', ask: `My imps grow restless again. ${want} ${name}, mortal. Promptly.`, want: [{ fish: pick, n: want }], thanks: 'Acceptable. Begone, and come back with more.', reward: { seeds: 8 + k * 2 }, order: true }
-    : { stars: 1, title: 'An order for the market', ask: `The market in Sunfall wants ${want} ${name}. Fancy the job? I'll split the takings with you.`, want: [{ fish: pick, n: want }], thanks: 'Lovely work. Here\'s your share.', reward: { seeds: 6 + k * 2 }, order: true };
+    ? k % 3 === 2 ? { stars: 3, title: 'Cursed tribute', ask: `My larder lacks a certain... glow. ${2 + k % 3} cursed fish, any kind.`, want: [{ fish: 'any', n: 2 + k % 3, cursed: true }], thanks: 'Ahh. Still warm with wickedness.', reward: { seeds: 14 + Math.min(k, 15) * 2 }, order: true }
+    : { stars: 2, title: 'Tribute', ask: `My imps grow restless again. ${want} ${name}, mortal. Promptly.`, want: [{ fish: pick, n: want }], thanks: 'Acceptable. Begone, and come back with more.', reward: { seeds: 8 + Math.min(k, 15) * 2 }, order: true }
+    : { stars: 1, title: 'An order for the market', ask: `The market in Sunfall wants ${want} ${name}. Fancy the job? I'll split the takings with you.`, want: [{ fish: pick, n: want }], thanks: 'Lovely work. Here\'s your share.', reward: { seeds: 6 + Math.min(k, 15) * 2 }, order: true };
 }
 export const wantHave = (s, w) => w.has ? w.has(s) : w.glades ? ZONES.filter(z => w.glades.includes(z.land) && s.zones[z.id].done).length : bagCount(s, w.fish, !!w.cursed);
 export const wantLabel = w => w.label ? w.label : (w.cursed ? 'Cursed ' : '') + (w.fish === 'any' ? (w.cursed ? 'fish of any kind' : 'Any fish') : w.cursed ? FISH_BY[w.fish].name.toLowerCase() : FISH_BY[w.fish].name);
 export const questReady = (s, g) => questOf(s, g).want.every(w => wantHave(s, w) >= w.n);
 // Seeds as a reward scale with income, like favours do.
-export const questSeeds = (k, inc) => Math.round(k * (25 + inc * 3));
+// About 8 seconds of income per point of reward.
+export const questSeeds = (k, inc) => Math.round(k * (25 + inc * 8));
 export function turnIn(s, g, inc) {
   const Q = questOf(s, g), q = questState(s, g);
   if (!q.taken || !questReady(s, g)) return null;

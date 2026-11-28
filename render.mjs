@@ -1,12 +1,12 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=42';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=42';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=42';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf, impName } from './critters.mjs?v=42';
-import { steer, standable, overWater, escape } from './nav.mjs?v=42';
-import { trapCount } from './fishing.mjs?v=42';
-import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=42';
-import { grownOf, portalSpot, portalStage, PORTAL_ZONE } from './timber.mjs?v=42';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=43';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=43';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=43';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf, impName } from './critters.mjs?v=43';
+import { steer, standable, overWater, escape } from './nav.mjs?v=43';
+import { trapCount } from './fishing.mjs?v=43';
+import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=43';
+import { grownOf, portalSpot, portalStage, PORTAL_ZONE } from './timber.mjs?v=43';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -54,7 +54,7 @@ function floraAtlas(P, style = 'original') {
   for (let pose = 0; pose < 3; pose++) {
     const lean = pose - 1, X = pose * cw;
     [[3, 8, 0], [5, 7, 1], [4, 6, 1]].forEach(([x, top, l], k) => { for (let y = top; y < ch; y++) dot(X + x + (y < 9 ? lean * l : 0), y, tone(.72 + k * .22)); });
-    [[2, 3], [4, 1], [6, 4], [3, 5]].forEach(([x, top], k) => { for (let y = top; y < ch; y++) dot(X + x + (y < 6 ? lean : 0) + (y < 3 ? lean : 0), ch + y, tone(.7 + k * .17, P.demon ? 0 : 8)); });
+    [[2, 3], [4, 1], [6, 4], [3, 5]].forEach(([x, top], k) => { for (let y = top; y < ch; y++) dot(X + x + (y < 6 ? lean : 0) + (y < 3 ? lean : 0), ch + y, tone(.7 + k * .17, P.grass[1] > P.grass[0] && P.grass[1] > P.grass[2] ? 8 : 0)); });
     P.flowers.forEach((col, f) => {
       const r = 2 + f; const fx = X + 4 + lean, fy = r * ch + 3;
       for (let y = fy + 1; y < (r + 1) * ch; y++) dot(X + 4 + (y < fy + 4 ? lean : 0), y, tone(.78));
@@ -125,8 +125,8 @@ function lykeAtlas(P, cw, ch) {
   c.width = Math.max(CW_ * 3, SPER * sw); c.height = Y0 + 6 * sh;
   const g = c.getContext('2d');
   const mixc = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t), rgb = a => `rgb(${a.map(v => clamp(v, 0, 255) | 0).join(',')})`;
-  const m = (P.grass[0] + P.grass[1] + P.grass[2]) / 3, sage = P.demon ? P.grass : mixc(P.grass, [m, m + 8, m], .14);
-  const dark = P.demon ? [40, 14, 22] : [18, 44, 30], tip = P.demon ? [255, 176, 120] : [214, 236, 170];
+  const m = (P.grass[0] + P.grass[1] + P.grass[2]) / 3, sage = mixc(P.grass, [m, m, m], .14); // every region's blades keep its own hue
+  const dark = P.grass.map(v => v * .3), tip = mixc(P.lush, [255, 250, 228], .45); // shade and sunlit tips in the region's own colour
   const SH = [mixc(sage, dark, .55), sage.map(v => v * .78), sage.map(v => v * .94), mixc(sage, P.lush, .3).map(v => v * 1.04), mixc(mixc(sage, P.lush, .55), tip, .14).map(v => v * 1.08)];
   const shade = SH.map(rgb), root = SH.map(s => rgb(s.map(v => v * .8)));
   // One blade with its root at (X + x, bottom - 1), inside a box `wide` px across starting at X.
@@ -688,8 +688,21 @@ export function createRenderer(canvas, world, land, images) {
     if (!groundOk(f.x + dx / d * v, f.y + dy / d * v)) { if (f.stray) { f.stray = false; f.lost = true; } else if (f.homing) { f.x += dx / d * v; f.y += dy / d * v; return; } f.goal = null; return; }
     f.x += dx / d * v; f.y += dy / d * v; f.dist += v; f.pose = 'walk'; if (Math.abs(dx) > .3) f.dir = dx > 0 ? 1 : -1;
   }
+  function stepIdle(f, dt) {
+    f.idleT = (f.idleT ?? 2 + Math.random() * 6) - dt; f.act = Math.max(0, (f.act || 0) - dt);
+    if (f.idleT <= 0 && f.wave <= 0) { f.idleT = 6 + Math.random() * 8; const r = Math.random(); f.move = r < .45 ? 'look' : r < .75 ? 'hop' : 'stretch'; f.act = f.move === 'look' ? 1.8 : f.move === 'hop' ? .5 : 1.3; }
+  }
+  // How an idling quest giver is drawn this frame: facing, a lift off the ground and a vertical stretch (feet planted).
+  function idlePose(f, tNow) {
+    const breathe = 1 + Math.sin(tNow * 1.7 + (f.x % 7)) * .018;
+    if (!(f.act > 0)) return { flip: 1, lift: 0, sy: breathe };
+    if (f.move === 'look') return { flip: -1, lift: 0, sy: breathe };
+    if (f.move === 'hop') { const k = 1 - f.act / .5; return { flip: 1, lift: Math.sin(k * Math.PI) * 2.2, sy: breathe }; }
+    const k = 1 - f.act / 1.3; return { flip: 1, lift: 0, sy: breathe + Math.sin(k * Math.PI) * .06 };
+  }
   function stepFolk(f, dt) {
     f.alpha = Math.min(1, f.alpha + dt * .6);
+    if (f.stay || f.kind === 'lord') stepIdle(f, dt);
     if (f.kind === 'lord') { if (f.wave > 0) f.wave -= dt; return; }
     if (f.kind === 'imp') { stepImp(f, dt); return; }
     if (f.wave > 0) { f.wave -= dt; return; }
@@ -788,9 +801,9 @@ export function createRenderer(canvas, world, land, images) {
     if (f.kind === 'lord') { // Lord Cinderbrow, on his own two hooves: standing, or waving his claw when you speak to him
       const sheet = images.lord, x = sx(f.x), y = sy(f.home.y);
       if (!sheet) { const h = 30 * cam.z; f.sx = x; f.sy = y - h / 2; f.sh = h; return; }
-      const fw = sheet.width / 2, fh = sheet.height, k = cam.z / SCALE * .85, w = fw * k, h = fh * k, breathe = Math.sin(tNow * 1.6) * .35 * cam.z;
+      const fw = sheet.width / 2, fh = sheet.height, k = cam.z / SCALE * .85, w = fw * k, h = fh * k, I = idlePose(f, tNow), hh = h * I.sy, lift = I.lift * cam.z;
       ctx.fillStyle = 'rgba(30,14,18,.3)'; ctx.beginPath(); ctx.ellipse(x, y, w * .3, h * .06, 0, 0, 7); ctx.fill();
-      ctx.save(); ctx.translate(snapX(x), 0); if (f.dir < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, (f.wave > 0 ? 1 : 0) * fw, 0, fw, fh, -w / 2, snapY(y - h - breathe + cam.z * .5), w, h + breathe); ctx.restore();
+      ctx.save(); ctx.translate(snapX(x), 0); if (f.dir * I.flip < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, (f.wave > 0 ? 1 : 0) * fw, 0, fw, fh, -w / 2, y - hh - lift + cam.z * .5, w, hh); ctx.restore();
       f.sx = x; f.sy = y - h / 2; f.sh = h;
       if (marks.lord) questBubble(x, y - h, marks.lord, tNow);
       return;
@@ -806,9 +819,9 @@ export function createRenderer(canvas, world, land, images) {
     }
     if (f.kind === 'pip' || f.kind === 'bram') {
       const sheet = images.keepers; if (!sheet) return;
-      const fw = sheet.width / 2, fh = sheet.height / 2, k = cam.z / SCALE, w = fw * k, h = fh * k, x = sx(f.x), y = sy(f.y), hop = f.wave > 0 ? Math.abs(Math.sin(f.wave * 7)) * 1.5 * cam.z : 0;
+      const fw = sheet.width / 2, fh = sheet.height / 2, k = cam.z / SCALE, w = fw * k, h = fh * k, x = sx(f.x), y = sy(f.y), I = idlePose(f, tNow), hh = h * I.sy, hop = (f.wave > 0 ? Math.abs(Math.sin(f.wave * 7)) * 1.5 : I.lift) * cam.z;
       ctx.globalAlpha = f.alpha; ctx.fillStyle = 'rgba(30,24,18,.25)'; ctx.beginPath(); ctx.ellipse(x, y, w * .26, h * .07, 0, 0, 7); ctx.fill();
-      ctx.save(); ctx.translate(snapX(x), 0); if (f.dir < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, (f.wave > 0 ? 1 : 0) * fw, f.row * fh, fw, fh, -w / 2, snapY(y - h - hop + cam.z * .5), w, h); ctx.restore();
+      ctx.save(); ctx.translate(snapX(x), 0); if (f.dir * I.flip < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, (f.wave > 0 ? 1 : 0) * fw, f.row * fh, fw, fh, -w / 2, y - hh - hop + cam.z * .5, w, hh); ctx.restore();
       f.sx = x; f.sy = y - h / 2; f.sh = h; ctx.globalAlpha = 1;
       if (marks[f.kind]) questBubble(x, y - h, marks[f.kind], tNow);
       return;
@@ -818,7 +831,8 @@ export function createRenderer(canvas, world, land, images) {
     const cell = f.wave > 0 ? 4 : f.pause > 0 ? 0 : Math.floor(f.dist / 2.2) % 4;
     ctx.globalAlpha = f.alpha;
     ctx.fillStyle = 'rgba(30,24,18,.25)'; ctx.beginPath(); ctx.ellipse(x, y, w * .26, h * .07, 0, 0, 7); ctx.fill();
-    ctx.save(); ctx.translate(snapX(x), 0); if (f.dir < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, cell * fw, f.row * fh, fw, fh, -w / 2, snapY(y - h + cam.z * .5), w, h); ctx.restore();
+    const I = f.stay ? idlePose(f, tNow) : { flip: 1, lift: 0, sy: 1 }, hh = h * I.sy;
+    ctx.save(); ctx.translate(snapX(x), 0); if (f.dir * I.flip < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, cell * fw, f.row * fh, fw, fh, -w / 2, y - hh - I.lift * cam.z + cam.z * .5, w, hh); ctx.restore();
     f.sx = x; f.sy = y - h / 2; f.sh = h;
     // A villager with a favour to ask carries a little speech bubble.
     const ask = f.kind === 'farm' && s.favours?.find(q => q.land === f.land && !q.done);
@@ -1234,6 +1248,7 @@ export function createRenderer(canvas, world, land, images) {
     },
     startle(w) { if (w.kind === 'fish') { burst(w.o.x + w.o.dir * w.o.len * .5, w.o.y - 8, 8, ['#ffd36b', '#fff'], 16); return; } w.o.spook = 1.6; w.o.tx = w.o.x + (Math.random() - .5) * 300; w.o.ty = w.o.y + (Math.random() - .5) * 200; burst(w.o.x, w.o.y - 14, 6, ['#fff', '#ffe28a'], 14); },
     strays() { return folk.filter(f => f.kind === 'imp' && (f.stray || f.lost)); },
+    folkList: () => folk,
     hitFolk(px, py) { for (const f of folk) if (f.sx != null && Math.abs(px - f.sx) < Math.max(14, f.sh * .35) && Math.abs(py - f.sy) < Math.max(18, f.sh * .6)) return f; return null; },
     portalBurst() { const P = portalSpot(world); if (!P) return; burst(P.x, P.y - 24, 40, ['#c8fff0', '#fff6d0', '#e2bd84', '#b8ffe6'], 40); rings.push({ x: P.x, y: P.y - 20, from: 6, to: 60, age: 0, life: 1.2, color: '#c8fff0' }); },
     fell(t, dir) { falling.push({ t, dir: dir || 1, t0: performance.now() }); },

@@ -1,8 +1,8 @@
 // Bugs and buried things: Pip the bug catcher in Honey Meadow and Bramwell the digger at Red Terrace. Rules only;
 // the net, the dig spots and their windows live in keepers.mjs. Everything you find goes into the same backpack as
 // your fish, so it is registered alongside them in FISH_BY, with a `kind` and the `buyer` who pays for it.
-import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=42';
-import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=42';
+import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=43';
+import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=43';
 
 export const PIP_ZONE = 4, BRAM_ZONE = 12; // Honey Meadow in Hollow Vale; Red Terrace in Ember Basin
 // "2 fireflies", "3 praying mantises", "2 mammoth tusks".
@@ -80,7 +80,7 @@ export function rollBug(hab, region, cond, net = 1, r = Math.random) {
   return null;
 }
 // The bug house: one of each bug, donated, adds to all earnings for good, like the aquarium.
-export const HOUSE_BONUS = [0, .008, .012, .02, .04];
+export const HOUSE_BONUS = [0, .004, .007, .011, .022]; // all of them together: about +30%
 export const houseBonus = s => Object.keys(s.bugHouse || {}).reduce((a, id) => a + (BUG_BY[id] ? HOUSE_BONUS[BUG_BY[id].tier] : 0), 0);
 export const houseMax = () => BUGS.reduce((a, b) => a + HOUSE_BONUS[b.tier], 0);
 
@@ -198,7 +198,7 @@ GIVERS.pip = { name: 'Pip', role: 'the bug catcher of Honey Meadow', quests: [
 ], orders: ['cabbage', 'bee', 'ladybug', 'hopper', 'moth', 'cricket', 'damsel', 'monarch', 'firefly', 'cicada', 'mantis', 'crab'] };
 GIVERS.pip.order = (k) => {
   const pick = GIVERS.pip.orders[(k * 5 + 3) % GIVERS.pip.orders.length], b = BUG_BY[pick], n = b.tier >= 2 ? 1 + k % 2 : 2 + k % 2;
-  return { stars: 1, title: 'A jar to fill', ask: `My bug book needs another drawing. ${n} ${plural(b.name, n)}, please?`, want: [{ fish: pick, n }], thanks: 'Got them! Here\'s something for your trouble.', reward: { seeds: 6 + k * 2 }, order: true };
+  return { stars: 1, title: 'A jar to fill', ask: `My bug book needs another drawing. ${n} ${plural(b.name, n)}, please?`, want: [{ fish: pick, n }], thanks: 'Got them! Here\'s something for your trouble.', reward: { seeds: 6 + Math.min(k, 15) * 2 }, order: true };
 };
 GIVERS.bram = { name: 'Bramwell', role: 'the digger of Red Terrace', quests: [
   Q(1, 'Break ground', 'Hm? Oh, hello. Bramwell. I dig. See those little star-shaped cracks in the ground? Something is buried under every one. Take this shovel and dig up three.', [], 'Three holes, and your back still works. Good start.', { seeds: 3 }),
@@ -227,11 +227,11 @@ GIVERS.bram.onAccept = (s, q) => { q.base = s.dug || 0; if (!s.shovel) s.shovel 
 GIVERS.pip.onAccept = s => { if (!s.net) s.net = 1; };
 GIVERS.bram.order = (k) => {
   const pick = GIVERS.bram.orders[(k * 5 + 3) % GIVERS.bram.orders.length], f = FIND_BY[pick], n = f.tier >= 2 ? 1 + k % 2 : 2 + k % 2;
-  return { stars: 1, title: 'For the collection', ask: `A collector in Sunfall wants ${n} ${plural(f.name, n)}. Fancy a dig?`, want: [{ fish: pick, n }], thanks: 'Splendid. Your share.', reward: { seeds: 6 + k * 2 }, order: true };
+  return { stars: 1, title: 'For the collection', ask: `A collector in Sunfall wants ${n} ${plural(f.name, n)}. Fancy a dig?`, want: [{ fish: pick, n }], thanks: 'Splendid. Your share.', reward: { seeds: 6 + Math.min(k, 15) * 2 }, order: true };
 };
 // What Pip pays for a bug, Bramwell for a find: their worth, growing with what the land earns.
 export const findWorth = (f, inc) => fishWorth(f, inc);
-export const DIG_SEEDS = inc => questSeeds(1.2, inc);
+export const DIG_SEEDS = inc => questSeeds(2.5, inc); // a pouch is worth about a fossil
 export { questSeeds };
 
 // Where Pip and Bramwell stand: clear, dry ground a little way from the heart of their glade, the same spot every time.
