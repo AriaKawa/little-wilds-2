@@ -258,7 +258,7 @@ const LOOK = {
   coral: { dead: [150, 134, 136], crack: [98, 84, 92], soil: [98, 66, 80], grass: [206, 122, 146], lush: [236, 140, 160], water: [64, 196, 206], flowers: ['#fff0f4', '#ff7fa8', '#ffb09a', '#a0f0e0', '#ffe28a'], mist: [234, 212, 220], sand: [250, 214, 200] },
   spore: { dead: [106, 92, 104], crack: [64, 52, 66], soil: [60, 44, 58], grass: [116, 98, 166], lush: [132, 110, 180], water: [92, 130, 190], flowers: ['#f0e0ff', '#c890ff', '#ff90c8', '#90f0d0', '#ffd890'], mist: [204, 192, 214] },
   // Demonreach: charcoal and plum earth, crimson grass, magenta in bloom.
-  demon: { dead: [78, 66, 74], crack: [40, 30, 40], soil: [58, 34, 44], grass: [124, 44, 58], lush: [154, 52, 70], water: [150, 70, 110], flowers: ['#ff6a3a', '#ffb347', '#c070ff', '#ff4a6a', '#ffe08a'], mist: [110, 80, 96] },
+  demon: { demon: true, dead: [78, 66, 74], crack: [40, 30, 40], soil: [58, 34, 44], grass: [124, 44, 58], lush: [154, 52, 70], water: [150, 70, 110], flowers: [], mist: [110, 80, 96] },
   glimmer: { dead: [116, 116, 134], crack: [68, 68, 90], soil: [62, 56, 86], grass: [96, 158, 200], lush: [120, 190, 220], water: [110, 150, 240], flowers: ['#ffffff', '#b8e8ff', '#d0b0ff', '#90f0e0', '#ffc0f0'], mist: [212, 214, 236], peak: [214, 196, 255] },
 };
 // The map is a grid of land-sized cells, three across and four down. A region can cover more than one cell:

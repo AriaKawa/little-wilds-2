@@ -1,13 +1,14 @@
-import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=41';
-import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=41';
-import { createLand } from './land.mjs?v=41';
-import { createRenderer, GRASS_STYLES } from './render.mjs?v=41';
-import { createAudio } from './audio.mjs?v=41';
-import { spiritFace, useDeerSheet, useSheet } from './critters.mjs?v=41';
-import { fishingInit } from './fishing.mjs?v=41';
-import { createAngling } from './angling.mjs?v=41';
-import { createKeepers } from './keepers.mjs?v=41';
-import { findsInit, NETS } from './finds.mjs?v=41';
+import { makeWorld, ZONES, LANDS, REGIONS, lookOf, CN, CW, CH, CELL, hash } from './world.mjs?v=42';
+import { mapsDone, newLand, tick, touch, buyGlade, gladeBuyable, gladePrice, landDone, landPct, landTouched, income, upgradeMax, catchUp, encode, decode, buySpirit, buyUpgrade, spiritCost, spiritOpen, upgradeCost, upgradeOpen, zonePct, zoneBloom, doneCount, initObjects, SPIRITS, UPGRADES, SPIRIT_CAP, JOURNAL, note, journalLabel, journalPages, journalCount, journalSize, pageDone, favourText, villageLands, hasWater } from './sim.mjs?v=42';
+import { createLand } from './land.mjs?v=42';
+import { createRenderer, GRASS_STYLES } from './render.mjs?v=42';
+import { createAudio } from './audio.mjs?v=42';
+import { spiritFace, useDeerSheet, useSheet } from './critters.mjs?v=42';
+import { fishingInit } from './fishing.mjs?v=42';
+import { createAngling } from './angling.mjs?v=42';
+import { createKeepers } from './keepers.mjs?v=42';
+import { findsInit, NETS } from './finds.mjs?v=42';
+import { timberInit } from './timber.mjs?v=42';
 
 const KEY = 'little-wilds-2-v2', CARDS_KEY = 'little-wilds-2-postcards', SOUND_KEY = 'little-wilds-2-muted', VOLUME_KEY = 'little-wilds-2-volume', GRASS_KEY = 'little-wilds-2-grass', MUSIC_KEY = 'little-wilds-2-music';
 const $ = id => document.getElementById(id);
@@ -76,7 +77,7 @@ async function buildWorld() {
   world.waterMoved = z => land.markWater(z);
 }
 function attach() {
-  initObjects(s, world); fishingInit(s); findsInit(s);
+  initObjects(s, world); fishingInit(s); findsInit(s); timberInit(s);
   land.setSource(s.h, s.zones); land.flushAll();
   view?.dispose(); quarters = []; glideTo = -1; mapFrom = null; preview = null;
   $('btn-preview').textContent = 'Preview'; $('btn-preview').setAttribute('aria-pressed', false); $('btn-map').textContent = 'Map';
@@ -84,6 +85,7 @@ function attach() {
   view.onPet = (label, zone) => toast(`${label} has come back to ${ZONES[zone].name}.`);
   view.onSplash = (pan, near, big) => audio.splash(pan, near, big);
   view.onSeen = key => jot(key);
+  view.onChop = () => audio.chop?.(); view.onFell = () => audio.fell?.();
   view.onImp = () => toast('An imp has scampered off across Demonreach! Find it and send it home.');
   // Lands already restored or flourishing before the journal existed are written in quietly.
   LANDS.forEach((_, l) => { if (regionDone(l)) s.journal['land:' + regionOf(l).name] = 1; if (regionBloomed(l)) s.journal['bloom:' + regionOf(l).name] = 1; });
@@ -379,6 +381,7 @@ addEventListener('blur', () => { pointers.clear(); releaseAll(); });
 function handle(ev, now, quiet = false) {
   for (const e of ev) {
     if (e.t === 'revive' && !quiet) { view.revived(e.o, now); audio.pop(); view.reward(e.o.x * CELL, e.o.y * CELL - e.o.size * .7, e.reward, (e.o.worth ?? e.o.size) > 40 ? 10 : 5); pulseSeeds(); s.revivedAny = true; }
+    if (e.t === 'fell' && !quiet) { view.fell(e.tree, e.dir); if (!s.tipWood) { s.tipWood = 1; toast(`Your Woodkin felled a tree · +${e.wood} wood. Its stump will sprout again. Give wood to the spirit portal in Birch Knoll.`); } }
     if (e.t === 'water' && !quiet) { audio.water(); toast(`The Rainwisp fills the dry riverbed in ${ZONES[e.zone].name}.`); jot('rainwisp'); }
     if (e.t === 'weather' && !quiet) { toast(e.kind === 'snow' ? 'Snow is falling. The land rests under it, growing all the same.' : 'A shower passes over. The green spreads faster in the rain.'); jot(e.kind); }
     if (e.t === 'season' && !quiet) { banner({ spring: 'Spring', summer: 'Summer', autumn: 'Autumn', winter: 'Winter' }[e.season], { spring: 'Blossom drifts over the wilds.', summer: 'Long, warm days.', autumn: 'The leaves turn gold.', winter: 'Frost settles on the land.' }[e.season], 4200); jot(e.season); }
@@ -453,10 +456,10 @@ addEventListener('pagehide', save);
 async function main() {
   try {
     await nextFrame();
-    const [worldImg, spirits, pets, flyers, deer, fish, fawn, folk, raincloud, places, imp, items, portraits, keepersImg, stalls, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=41').catch(() => null), load('assets/fish.png?v=41').catch(() => null), load('assets/fawn.png?v=41').catch(() => null), load('assets/folk.png?v=41').catch(() => null), load('assets/raincloud.png?v=41').catch(() => null), load('assets/places.png?v=41').catch(() => null), load('assets/imp.png?v=41').catch(() => null), load('assets/items.png?v=41').catch(() => null), load('assets/portraits.png?v=41').catch(() => null), load('assets/keepers.png?v=41').catch(() => null), load('assets/stalls.png?v=41').catch(() => null), ...LANDS.slice(1).map((_, n) => lookOf(n + 1) === n + 1 ? load(`assets/biome-${n + 1}.png?v=41`).catch(() => null) : null)]);
+    const [worldImg, spirits, pets, flyers, deer, fish, fawn, folk, raincloud, places, imp, items, portraits, keepersImg, imp2, imp3, imp4, lordImg, portalImg, ...biomes] = await Promise.all([load('assets/world.png'), load('assets/spirits.png'), load('assets/pets.png'), load('assets/flyers.png').catch(() => null), load('assets/deer.png?v=42').catch(() => null), load('assets/fish.png?v=42').catch(() => null), load('assets/fawn.png?v=42').catch(() => null), load('assets/folk.png?v=42').catch(() => null), load('assets/raincloud.png?v=42').catch(() => null), load('assets/places.png?v=42').catch(() => null), load('assets/imp.png?v=42').catch(() => null), load('assets/items.png?v=42').catch(() => null), load('assets/portraits.png?v=42').catch(() => null), load('assets/keepers.png?v=42').catch(() => null), load('assets/imp-2.png?v=42').catch(() => null), load('assets/imp-3.png?v=42').catch(() => null), load('assets/imp-4.png?v=42').catch(() => null), load('assets/lord.png?v=42').catch(() => null), load('assets/portal.png?v=42').catch(() => null), ...LANDS.slice(1).map((_, n) => lookOf(n + 1) === n + 1 ? load(`assets/biome-${n + 1}.png?v=42`).catch(() => null) : null)]);
     if (deer) useDeerSheet(deer, fawn);
-    useSheet('imp', imp);
-    images = { world: worldImg, spirits, pets, flyers, fish, folk, raincloud, places, items, portraits, keepers: keepersImg, stalls, biomes: [null, ...biomes] };
+    useSheet('imp', imp); useSheet('imp2', imp2); useSheet('imp3', imp3); useSheet('imp4', imp4);
+    images = { world: worldImg, spirits, pets, flyers, fish, folk, raincloud, places, items, portraits, keepers: keepersImg, lord: lordImg, portal: portalImg, biomes: [null, ...biomes] };
     await buildWorld();
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch { raw = null; }

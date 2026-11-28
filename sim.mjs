@@ -1,9 +1,10 @@
 // Rules of restoration. No DOM: runs in the game, offline catch-up and the pacing test alike.
 // One field covers the whole continent; glades are bought outward from the middle, and one army of spirits works all of it.
-import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=41';
-import { CATCHES, tankBonus } from './fishing.mjs?v=41';
-import { BUGS, PIECES, houseBonus, museumBonus } from './finds.mjs?v=41';
-import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=41';
+import { CW, CH, CN, LCW, LCH, LCN, ZONES, LANDS, REGIONS, lookOf } from './world.mjs?v=42';
+import { CATCHES, tankBonus } from './fishing.mjs?v=42';
+import { BUGS, PIECES, houseBonus, museumBonus } from './finds.mjs?v=42';
+import { buildNav, markTree, steer, standable, escape } from './nav.mjs?v=42';
+import { growTrees, fell, pickTree, portalBonus, CHOP } from './timber.mjs?v=42';
 // The ground map spirits and animals walk by, rebuilt when a different set of planted trees is in play.
 export function navOf(s, w) { if (!w.nav || w.navTrees !== s.trees) { buildNav(w); for (const t of s.trees) markTree(w, t); w.navTrees = s.trees; } return w.nav; }
 
@@ -17,6 +18,7 @@ export const SPIRITS = [
   { name: 'Petalkin', job: 'Follows the grass and turns it to wildflowers.', cost: 400, need: 1, r: 2.6, rate: .04, cap: 1, speed: 3.2, blooms: true },
   { name: 'Rainwisp', job: 'Fills dry riverbeds with water, then drifts over the land raining on wide patches.', cost: 2500, need: 2, r: 6.5, rate: .016, cap: GREEN, speed: 6 },
   { name: 'Elderoot', job: 'Revives dead trees and stones, then plants new trees.', cost: 15000, need: 4, r: 3.4, rate: .07, cap: 1, speed: 2.4 },
+  { name: 'Woodkin', job: 'Fells grown trees for wood. Their stumps sprout again.', cost: 40000, need: 6, r: 0, rate: 0, cap: 0, speed: 3, wood: true },
 ];
 export const UPGRADES = [
   { id: 'reach', name: 'Wider hands', desc: 'Your touch heals a wider circle.', cost: 60, grow: 2.7, max: 7 },
@@ -39,7 +41,7 @@ export const PLACE_INCOME = { farm: 12, pier: 8, throne: 20 };
 let places = [];
 const placeIncome = s => places.reduce((a, [id, kind]) => a + (s.objHp?.[id] === 0 ? PLACE_INCOME[kind] || 0 : 0), 0);
 // The demon lord's blessings (s.boon, from his quests) and the fish in the aquarium add to it all.
-export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s) * (1 + (s.boon || 0) + tankBonus(s) + houseBonus(s) + museumBonus(s));
+export const income = s => (LANDS.reduce((a, _, l) => a + landIncome(s, l), 0) + placeIncome(s)) * journalBoost(s) * (1 + (s.boon || 0) + tankBonus(s) + houseBonus(s) + museumBonus(s) + portalBonus(s));
 
 // The field journal: creatures met, lands brought back and small moments. Each new entry gives a little gift of
 // seeds; each finished page adds 10% to everything the restored lands earn, for good.
@@ -155,7 +157,9 @@ export function newLand() {
     objHp: null, trees: [], age: 0, played: 0, last: Date.now(), touched: false, paused: false, journal: {}, favours: [],
   };
 }
-export const initObjects = (s, w) => { places = w.objects.filter(o => o.place).map(o => [o.id, o.place]); if (s.objHp?.length !== w.objects.length || s.wv !== WORLD_VERSION) { s.objHp = w.objects.map(o => s.zones[o.zone].done ? 0 : o.hp); if (s.wv !== WORLD_VERSION) s.zones.forEach(z => { if (z.done) z.sweep = 0; }); s.wv = WORLD_VERSION; } };
+export const initObjects = (s, w) => { places = w.objects.filter(o => o.place).map(o => [o.id, o.place]); if (s.objHp?.length !== w.objects.length || s.wv !== WORLD_VERSION) { s.objHp = w.objects.map(o => s.zones[o.zone].done ? 0 : o.hp); if (s.wv !== WORLD_VERSION) s.zones.forEach(z => { if (z.done) z.sweep = 0; }); s.wv = WORLD_VERSION; }
+  // The throne is gone: the lord's spot counts as restored as soon as its glade is awake.
+  for (const [id, place] of places) if (place === 'throne' && s.objHp[id] > 0 && s.zones[w.objects[id].zone]?.open) s.objHp[id] = 0; };
 
 const levelOf = (s, z) => s.levels[ZONES[z].land] || 0, rankOf = (s, z) => s.zones[z].rank || 0;
 const toughness = (s, z) => (1 + rankOf(s, z) * 1.3) * (1 + levelOf(s, z) * .6);
@@ -266,6 +270,11 @@ function seek(s, w, a) {
       if (best >= 0) { const P = w.ponds[best]; a.tx = P.x / 4 + (Math.random() - .5) * P.r / 6; a.ty = P.y / 4 + (Math.random() - .5) * P.r / 8; a.pour = best; a.rain = 0; return true; }
     }
   }
+  if (a.type === 4) { // A Woodkin goes to the nearest grown tree no other Woodkin has claimed, and stands beside it.
+    const t = pickTree(s, a);
+    if (t) for (const [dx, dy] of [[1.8, .5], [-1.8, .5], [1.4, 1.4], [-1.4, 1.4], [0, 1.8], [2.4, 0], [-2.4, 0]]) { const x = t.x + dx, y = t.y + dy; if (standable(w, Math.floor(y) * CW + Math.floor(x))) { a.tx = x; a.ty = y; a.tree = t; return true; } }
+    a.tree = null; a.tx = -1; a.nap = 4 + Math.random() * 4; return false;
+  }
   if (a.type === 3) {
     let best = null, bd = Infinity;
     for (const o of w.objects) if (s.objHp[o.id] > 0 && s.zones[o.zone].open) { const d = Math.hypot(o.x - a.x, o.y - a.y); if (d < bd) { bd = d; best = o; } }
@@ -294,7 +303,7 @@ function stepSpirit(s, w, a, dt, ev) {
   if (a.nap > 0) { a.nap -= dt; if (a.nap > 0) return; }
   if (a.tx < 0) { if (!seek(s, w, a)) return; a.work = 0; }
   const dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy), step = def.speed * pace * dt;
-  const lift = a.type === 1 ? (s.h[Math.round(a.y) * CW + Math.round(a.x)] >= .5 ? 1 : 0) : 1;
+  const lift = a.type === 4 ? 0 : a.type === 1 ? (s.h[Math.round(a.y) * CW + Math.round(a.x)] >= .5 ? 1 : 0) : 1;
   if (d > .3) {
     // Walk round trees, stones, houses and ponds, bounding over streams. The Rainwisp floats over water.
     const r = w.rough ? (a.x += dx * Math.min(1, step / d), a.y += dy * Math.min(1, step / d), Math.hypot(a.tx - a.x, a.ty - a.y) < .3 ? 'arrived' : 'moving') : steer(w, a, a.tx, a.ty, step, dt, a.type === 2);
@@ -322,6 +331,13 @@ function stepSpirit(s, w, a, dt, ev) {
   if (!a.working) w.reached = (w.reached || 0) + 1;
   a.working = true;
   a.work += dt * pace;
+  if (a.type === 4) { // chop, chop, and down it comes
+    const t = a.tree;
+    if (!t || !s.trees.includes(t)) { a.tree = null; a.tx = -1; a.work = 0; a.working = false; return; }
+    a.dir = t.x > a.x ? 1 : -1;
+    if (a.work >= CHOP) { const got = fell(s, w, t); ev.push({ t: 'fell', tree: t, dir: t.x > a.x ? 1 : -1, wood: got }); a.tree = null; a.tx = -1; a.work = 0; a.working = false; a.nap = 1 + Math.random(); }
+    return;
+  }
   if (lift) heal(s, w, a.x, a.y, def.r, def.rate * pace * dt, def.cap);
   if (a.type === 3 || a.type === 0) hitObjects(s, w, a.x, a.y, def.r, dt * (a.type === 3 ? 1.1 : .25) * pace, ev);
   if (a.work > 1.4) {
@@ -375,6 +391,7 @@ export function tick(s, w, dt, ev = [], slice = 0, of = 1) {
   navOf(s, w);
   for (let n = slice; n < s.spirits.length; n += of) stepSpirit(s, w, s.spirits[n], dt * of, ev);
   creep(s, w, dt, carries.get(s));
+  growTrees(s, w, dt, ev);
   if (s.wx?.kind) showerSpots(s, w, dt);
   weather(s, dt, ev);
   if (Math.floor(s.age) !== Math.floor(s.age - dt)) favours(s, ev);
@@ -441,7 +458,7 @@ function b64(bytes) { let t = ''; for (let i = 0; i < bytes.length; i += 8192) t
 export function encode(s) {
   const bytes = new Uint8Array(CN);
   for (let i = 0; i < CN; i++) bytes[i] = Math.round(s.h[i] * 255);
-  return JSON.stringify({ ...s, h: b64(bytes), spirits: s.spirits.map(({ held, rx, ry, anim, px, py, ...a }) => a), last: Date.now() });
+  return JSON.stringify({ ...s, h: b64(bytes), spirits: s.spirits.map(({ held, rx, ry, anim, px, py, tree, ...a }) => a), last: Date.now() });
 }
 function loadField(s, w) {
   s.zones.forEach(z => { z.g = 0; z.l = 0; });

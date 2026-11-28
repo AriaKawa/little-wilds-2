@@ -1,10 +1,13 @@
 // Pip and Bramwell, played: the bug net (N), bugs out on the land, dig spots and the shovel, Pip's bug house,
 // Bramwell's museum, and their markets. Their quests run through the same dialogue as Old Tam's (angling.mjs);
 // the rules are in finds.mjs.
-import { ZONES, LANDS, CELL, CW, TW, TH, BEACH, KIND } from './world.mjs?v=41';
-import { FISH_BY, TIERS, ITEM_COLS, ITEM_ROWS, GIVERS, questState, questNeeds, conditions, waterAt, bagAdd, bagCount, priceOf, sellAll, bagWorth, STACK } from './fishing.mjs?v=41';
-import { BUGS, BUG_BY, NETS, rollBug, HOUSE_BONUS, houseBonus, houseMax, FINDS, FIND_BY, SETS, PIECES, setPieces, setDone, museumCount, museumBonus, museumMax, PIECE_BONUS, SET_BONUS, rollDig, assess, spawnDigs, DIG_ICON, DIG_SEEDS, SHOVELS, PIP_ZONE, BRAM_ZONE, stallOf } from './finds.mjs?v=41';
-import { icon } from './angling.mjs?v=41';
+import { ZONES, LANDS, CELL, CW, TW, TH, BEACH, KIND } from './world.mjs?v=42';
+import { FISH_BY, TIERS, ITEM_COLS, ITEM_ROWS, GIVERS, questState, questNeeds, conditions, waterAt, bagAdd, bagCount, priceOf, sellAll, bagWorth, STACK } from './fishing.mjs?v=42';
+import { BUGS, BUG_BY, NETS, rollBug, HOUSE_BONUS, houseBonus, houseMax, FINDS, FIND_BY, SETS, PIECES, setPieces, setDone, museumCount, museumBonus, museumMax, PIECE_BONUS, SET_BONUS, rollDig, assess, spawnDigs, DIG_ICON, DIG_SEEDS, SHOVELS, PIP_ZONE, BRAM_ZONE, stallOf } from './finds.mjs?v=42';
+import { icon } from './angling.mjs?v=42';
+import { portalSpot, portalStage, portalTotal, portalBonus, giveWood, PORTAL_ZONE, PORTAL_STAGES } from './timber.mjs?v=42';
+const WOOD_ICON = 61, PORTAL_ICON = 63;
+const STAGE_NAMES = ['A ruin of rotten posts', 'The footings set', 'The pillars raised', 'The crossbeam lifted', 'The roof beam and ropes', 'Whole, and awake'];
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
@@ -154,6 +157,7 @@ export function createKeepers(g, angling) {
 
   /* Input */
   function pointerDown(e, now) {
+    if (!net && V().hitPortal?.(e.clientX, e.clientY)) { openPortal(); return true; }
     const dig = hitDig(e.clientX, e.clientY);
     if (dig && (!net || !bugInReach(e))) { digAt(dig); return true; }
     if (!net || V().cam.z < .9) return false; // far out on the map, a click still looks around
@@ -161,6 +165,25 @@ export function createKeepers(g, angling) {
   }
   function bugInReach(e) { const p = V().toWorld(e.clientX, e.clientY), reach = NETS[S().net]?.reach || 9; return bugs.some(q => !q.flee && q.alpha > .3 && Math.hypot(q.x - p.x, q.y - q.lift - p.y) - q.b.size * .4 < reach); }
   function keyDown(e) { if (e.code === 'KeyN' && !e.repeat) { toggleNet(); return true; } return false; }
+
+  /* The spirit portal in Birch Knoll, rebuilt with wood. */
+  function openPortal(msg = '') {
+    const s = S(), st = portalStage(s), total = portalTotal(), canGive = Math.min(s.wood, total - s.portal.wood);
+    const stages = PORTAL_STAGES.map((need, k) => `<li class="${k < st.stage ? 'ok' : k === st.stage ? 'now' : ''}"><b>${esc(STAGE_NAMES[k + 1])}</b><small>${k < st.stage ? '✓ built' : k === st.stage ? `${st.into} / ${need} wood` : `${need} wood`}</small></li>`).join('');
+    show('portal', `<div class="bag-head">${icon(PORTAL_ICON, 'big')}<div><h2>The spirit portal</h2><p class="sub">${msg ? esc(msg) + ' ' : ''}An old wooden gate the spirits once walked through, in ${ZONES[PORTAL_ZONE].name}. Give it wood and it is built up again, a little at a time. Each part raised adds 2% to all your earnings, and the whole gate 10% more.</p></div></div>
+      <div class="portal-view"><i class="portal-art" style="background-position:${Math.min(st.stage, 5) * 20}% 0"></i>${st.done ? '' : `<i class="portal-art next" style="background-position:${(st.stage + 1) * 20}% 0;clip-path:inset(${100 - st.into / st.need * 100}% 0 0 0)"></i>`}</div>
+      <div class="portal-bar"><i style="width:${s.portal.wood / total * 100}%"></i></div>
+      <p class="sub small">${esc(STAGE_NAMES[Math.min(st.stage, 5)])} · ${s.portal.wood} of ${total} wood · +${Math.round(portalBonus(s) * 100)}% earnings now</p>
+      <ul class="portal-stages">${stages}</ul>
+      <div class="row">${st.done ? '<b class="ok">The portal is whole. Spirit light shines through it.</b>' : `<button class="wood primary" data-kp="givewood" ${canGive ? '' : 'disabled'}>${icon(WOOD_ICON, 'tiny')}${canGive ? `Give ${canGive} wood` : 'No wood to give'}</button>`}<button class="wood" data-talk="bye">Close</button></div>
+      <p class="sub small">You have ${s.wood} wood. ${s.spirits.some(a => a.type === 4) ? 'Your Woodkin fell grown trees for more; their stumps sprout again.' : 'A Woodkin spirit fells grown trees for wood, once enough glades are restored.'}</p>`);
+  }
+  angling.addRow(s => {
+    if (!s.zones[PORTAL_ZONE]?.open && !s.wood) return '';
+    const st = portalStage(s);
+    return `<button class="qt${s.wood && !st.done ? ' ready' : ''}" data-qt="portal"><i class="item" style="background-position:${iconPos(st.done ? PORTAL_ICON : WOOD_ICON)}"></i><span><b>${st.done ? 'The spirit portal is whole' : 'The spirit portal'}</b><small>${st.done ? '+' + Math.round(portalBonus(s) * 100) + '% earnings' : `${s.wood} wood · ${s.portal.wood} / ${portalTotal()} built`}</small></span></button>`;
+  });
+  angling.addKeeper('portal', { goTo() { const P = portalSpot(Wd()); if (P && S().zones[PORTAL_ZONE].open) { V().glide(P.x, P.y - 20, Math.max(2.2, V().cam.z)); toast('The old spirit portal. Click it to give it wood.'); } else { V().focusZone(PORTAL_ZONE); toast(`An old spirit portal stands in ${ZONES[PORTAL_ZONE].name}. Wake that glade to find it.`); } } });
 
   /* The tracker: dig spots waiting, once you have a shovel. */
   angling.addRow(s => {
@@ -186,7 +209,7 @@ export function createKeepers(g, angling) {
     buttons: s => `<button class="wood" data-kp="pipmarket">${icon(95, 'tiny')}Sell bugs</button><button class="wood" data-kp="house">${icon(DIG_ICON.jar, 'tiny')}Bug house</button>`,
     idle: s => s.net ? `<button class="wood" data-kp="net">${net ? 'Back to catching' : 'Get my net out'}</button>` : '',
     where: (s, st) => `Catches bugs in ${ZONES[PIP_ZONE].name}, Hollow Vale, and buys every one. ${Math.min(st.n, GIVERS.pip.quests.length)} of ${GIVERS.pip.quests.length} quests done.`,
-    goTo: goKeeper(PIP_ZONE, () => where(PIP_ZONE, 'Pip keeps a little bug stall')),
+    goTo: goKeeper(PIP_ZONE, () => where(PIP_ZONE, 'Pip hunts for bugs')),
     market: msg => openKeeperMarket('pip', msg),
   });
   angling.addKeeper('bram', {
@@ -197,7 +220,7 @@ export function createKeepers(g, angling) {
     buttons: s => { const raw = bagCount(s, 'fossil') - (questNeeds(s).fossil || 0); return `${raw > 0 ? `<button class="wood primary" data-kp="assess">${icon(DIG_ICON.glass, 'tiny')}Look at my fossils (${raw})</button>` : ''}<button class="wood" data-kp="brammarket">${icon(DIG_ICON.shovel, 'tiny')}Sell finds</button><button class="wood" data-kp="museum">${icon(DIG_ICON.tent, 'tiny')}Museum</button>`; },
     idle: s => s.digs?.length ? '<button class="wood" data-kp="digs">Find a dig spot</button>' : '',
     where: (s, st) => `Digs at ${ZONES[BRAM_ZONE].name}, Ember Basin, and keeps a museum of fossils. ${Math.min(st.n, GIVERS.bram.quests.length)} of ${GIVERS.bram.quests.length} quests done.`,
-    goTo: goKeeper(BRAM_ZONE, () => where(BRAM_ZONE, 'Bramwell keeps his dig tent')),
+    goTo: goKeeper(BRAM_ZONE, () => where(BRAM_ZONE, 'Bramwell digs')),
     market: msg => openKeeperMarket('bram', msg),
   });
 
@@ -206,7 +229,7 @@ export function createKeepers(g, angling) {
     const s = S(), i0 = inc(), worth = bagWorth(s, i0, who), name = who === 'pip' ? 'Pip' : 'Bramwell';
     const rows = s.bag.map((q, i) => { const f = FISH_BY[q.id]; if (f.buyer !== who && !(who === 'bram' && f.kind === 'raw')) return ''; if (f.kind === 'raw') return `<div class="mrow">${icon(f.icon)}<span><b>${esc(f.name)} ×${q.n}</b></span><small class="price no">"Let me look at it first!"</small><span></span><span></span></div>`; const p = priceOf(s, q, i0, who), museum = who === 'bram' && f.set && !s.museum[f.id], house = who === 'pip' && !s.bugHouse[f.id]; return `<div class="mrow">${icon(f.icon)}<span><b>${esc(f.name)} ×${q.n}</b>${tierTag(f)}${museum ? '<small class="held">Not in the museum yet</small>' : house ? '<small class="held">Not in the bug house yet</small>' : ''}</span><small class="price">${SEED}${fmt(p)}</small><button class="wood" data-mk="1" data-i="${i}">Sell 1</button>${q.n > 1 ? `<button class="wood" data-mk="all" data-i="${i}">All · ${fmt(p * q.n)}</button>` : '<span></span>'}</div>`; }).join('');
     const empty = who === 'pip' ? 'No bugs in your backpack. Press N for your net and go looking!' : 'Nothing dug up yet. Click the star-shaped cracks in the ground with your shovel.';
-    show('market', `<div class="market-head"><i class="portrait mini p-${who}"></i><div><h2>${who === 'pip' ? 'Pip\'s bug stall' : 'Bramwell\'s finds'}</h2><p class="sub">${msg ? esc(msg) : who === 'pip' ? 'Pip buys every bug you catch. Rarer bugs are worth far more.' : 'Bramwell buys fossils and relics. Fossils are worth more in his museum, though.'}</p></div></div>
+    show('market', `<div class="market-head"><i class="portrait mini p-${who}"></i><div><h2>${who === 'pip' ? 'Pip\'s bug jars' : 'Bramwell\'s finds'}</h2><p class="sub">${msg ? esc(msg) : who === 'pip' ? 'Pip buys every bug you catch. Rarer bugs are worth far more.' : 'Bramwell buys fossils and relics. Fossils are worth more in his museum, though.'}</p></div></div>
       ${rows ? `<div class="mrows">${rows}</div>` : `<div class="bag-info empty">${empty}</div>`}
       <div class="row"><button class="wood primary" data-mk="everything" ${worth ? '' : 'disabled'}>Sell everything · ${fmt(worth)}</button><button class="wood" data-kp="${who === 'pip' ? 'house' : 'museum'}">${who === 'pip' ? 'Bug house' : 'Museum'}</button><button class="wood" data-talk="back" data-k="${who}">Back</button></div>
       <p class="sub small">Selling everything keeps back anything an open quest still needs, and one of each ${who === 'pip' ? 'bug not yet in the bug house' : 'fossil not yet in the museum'}. ${name} pays for the rest.</p>`);
@@ -261,6 +284,7 @@ export function createKeepers(g, angling) {
       if (a === 'assess') assessAll();
       if (a === 'net') { $('modal').close(); toggleNet(true); }
       if (a === 'digs') { $('modal').close(); angling.goTo('dig'); }
+      if (a === 'givewood') { const before = portalStage(s).stage, got = giveWood(s), after = portalStage(s); if (got) { audio.chime(after.stage > before); save(); hud(); V().portalBurst?.(); } openPortal(after.done && before < 5 ? 'The last beam settles. The portal wakes, and spirit light pours through it!' : after.stage > before ? `${STAGE_NAMES[after.stage]}!` : got ? `${got} wood added.` : ''); }
       return true;
     }
     const h = e.target.closest('[data-house]');
@@ -285,7 +309,7 @@ export function createKeepers(g, angling) {
   return {
     get net() { return net; }, get bugs() { return S()?.net ? bugs : null; }, get holes() { return holes; },
     get swing() { return swing && performance.now() - swing.t < 300 ? swing : null; },
-    toggleNet, step, pointerDown, pointerMove, keyDown, modalClick, tapFolk, openHouse, openMuseum,
+    toggleNet, step, pointerDown, pointerMove, keyDown, modalClick, tapFolk, openHouse, openMuseum, openPortal,
     reset() { toggleNet(false); bugs.length = 0; holes.length = 0; },
   };
 }

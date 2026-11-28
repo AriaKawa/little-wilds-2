@@ -1,8 +1,8 @@
 // Bugs and buried things: Pip the bug catcher in Honey Meadow and Bramwell the digger at Red Terrace. Rules only;
 // the net, the dig spots and their windows live in keepers.mjs. Everything you find goes into the same backpack as
 // your fish, so it is registered alongside them in FISH_BY, with a `kind` and the `buyer` who pays for it.
-import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=41';
-import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=41';
+import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=42';
+import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=42';
 
 export const PIP_ZONE = 4, BRAM_ZONE = 12; // Honey Meadow in Hollow Vale; Red Terrace in Ember Basin
 // "2 fireflies", "3 praying mantises", "2 mammoth tusks".
@@ -37,6 +37,9 @@ export const BUGS = [
   B('jewel', 'Jewel beetle', 84, 3, 120, 1.2, { hab: ['tree'], move: 'perch', day: true, seasons: ['summer'], shy: .55, size: 7 }, 'Shines green and gold in the sun, like a cut gem.'),
   B('luna', 'Luna moth', 85, 3, 125, 1.2, { hab: ['meadow', 'tree'], move: 'flutter', night: true, seasons: ['spring'], shy: .45, size: 11 }, 'Pale green, with long trailing tails. Only on spring nights.'),
   B('glasswing', 'Glasswing butterfly', 86, 3, 140, 3, { hab: ['meadow'], move: 'flutter', day: true, region: 'Glimmerdeep', shy: .5, size: 9 }, 'Its wings are clear as glass. It lives among the crystals of Glimmerdeep.'),
+  B('ashcricket', 'Ash cricket', 60, 1, 30, 7, { hab: ['meadow', 'tree'], move: 'hop', region: 'Demonreach', shy: .3, size: 6 }, 'Grey as cinders. It chirps from the warm ground of Demonreach at every hour.'),
+  B('cindermoth', 'Cinder moth', 58, 2, 85, 4, { hab: ['meadow', 'tree'], move: 'flutter', night: true, region: 'Demonreach', shy: .35, size: 9 }, 'Charcoal wings speckled with glowing orange. Flutters over Demonreach by night.'),
+  B('brimstone', 'Brimstone beetle', 59, 2, 90, 4, { hab: ['meadow'], move: 'crawl', day: true, region: 'Demonreach', shy: .3, size: 7 }, 'Black with sulphur-yellow bands. Basks on the hot rocks of Demonreach by day.'),
   B('velvet', 'Red velvet ant', 87, 3, 150, 3, { hab: ['meadow'], move: 'crawl', day: true, region: 'Demonreach', shy: .4, size: 6 }, 'Fuzzy, scarlet and not an ant at all. Thrives on the hot ground of Demonreach.'),
   B('waterbug', 'Giant water bug', 88, 3, 120, 3, { hab: ['water'], move: 'crawl', region: 'Mistfen', shy: .4, size: 9 }, 'Lurks in the bog pools of Mistfen. Do not let it pinch you.'),
   B('molecricket', 'Mole cricket', 89, 3, 100, 0, { hab: [], move: 'crawl', shy: 0, size: 7, dig: true }, 'Lives underground and digs with shovel hands. You only find one by digging.'),
@@ -65,7 +68,7 @@ export function bugWhere(b) {
 // Which bug turns up at a spot: first the tier, by chance, then a bug of that tier that could be out here and now.
 export function rollBug(hab, region, cond, net = 1, r = Math.random) {
   const luck = NETS[net]?.luck || 0, odds = TIER_ODDS.map((p, t) => t >= 3 ? p * (1 + luck) : p);
-  const fit = b => b.w > 0 && b.hab.includes(hab) && (!b.region || b.region === region) && b.seasons.includes(cond.season) && (!b.day || !cond.night) && (!b.night || cond.night) && (b.rain !== 'only' || cond.rain);
+  const fit = b => b.w > 0 && b.hab.includes(hab) && (region === 'Demonreach' ? b.region === region : !b.region || b.region === region) && b.seasons.includes(cond.season) && (!b.day || !cond.night) && (!b.night || cond.night) && (b.rain !== 'only' || cond.rain);
   let k = r() * odds.reduce((a, p) => a + p, 0), tier = 1;
   for (let t = 1; t <= 4; t++) { k -= odds[t]; if (k <= 0) { tier = t; break; } }
   for (let t = tier; t >= 1; t--) {
@@ -231,8 +234,7 @@ export const findWorth = (f, inc) => fishWorth(f, inc);
 export const DIG_SEEDS = inc => questSeeds(1.2, inc);
 export { questSeeds };
 
-// Where Pip's stall and Bramwell's tent stand: clear, dry ground a little way from the heart of their glade, the
-// same spot every time. The keeper stands just to the right of it.
+// Where Pip and Bramwell stand: clear, dry ground a little way from the heart of their glade, the same spot every time.
 const stalls = {};
 export function stallOf(w, zone) {
   if (zone in stalls) return stalls[zone];
@@ -241,7 +243,7 @@ export function stallOf(w, zone) {
   for (let r = 50; r < 260 && !best; r += 10) for (let a = 0; a < 16 && !best; a++) {
     const x = z.px + Math.cos(a * .3927 + 1) * r, y = z.py + Math.sin(a * .3927 + 1) * r * .7;
     if (x < 40 || y < 40 || x > TW - 40 || y > TH - 40 || w.zone[Math.floor(y / CELL) * CW + Math.floor(x / CELL)] !== zone) continue;
-    if (w.free(x, y, 30) && w.free(x + 24, y + 2, 12) && dry(x, y) && !w.objects.some(o => Math.hypot(o.x * CELL - x, o.y * CELL - y) < 30 || Math.hypot(o.x * CELL - x - 24, o.y * CELL - y - 2) < 12)) best = { x, y, kx: x + 24, ky: y + 2 };
+    if (w.free(x, y, 14) && dry(x, y) && !w.objects.some(o => Math.hypot(o.x * CELL - x, o.y * CELL - y) < 18)) best = { x, y, kx: x, ky: y };
   }
   return stalls[zone] = best;
 }

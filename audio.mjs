@@ -142,6 +142,9 @@ export function createAudio() {
     reel() { if (!live()) return; const t = ac.currentTime, d = place(.012, 0, 1); tone(d, t, 1900, 1700, .025, .4, 'square'); },
     caught() { if (!live()) return; const t = ac.currentTime, d = place(.05, 0, 1); hiss(d, t, .3, 1, 'bandpass', 900, .8); [0, 4, 7, 12].forEach((n, k) => { const f = pitch(n + 12); tone(soft, t + .1 + k * .1, f, f * .999, 1.2, .035); }); },
     lost() { if (!live()) return; const t = ac.currentTime; tone(soft, t, pitch(7), pitch(0), .5, .03); tone(soft, t + .18, pitch(4), pitch(-3), .6, .025); },
+    // An axe biting wood, and a tree coming down: a creak, a whoosh and a heavy thud.
+    chop() { if (!live()) return; const t = ac.currentTime, d = place(.03, 0, .8); tone(d, t, 520, 340, .06, .5, 'triangle'); hiss(d, t, .07, .8, 'bandpass', 1600, 1.4); },
+    fell() { if (!live()) return; const t = ac.currentTime, d = place(.05, 0, .9); tone(d, t, 180, 120, .5, .15, 'sawtooth'); hiss(d, t + .5, .4, .7, 'highpass', 1800, .5); tone(d, t + .95, 90, 45, .45, .9); hiss(d, t + .95, .5, 1, 'lowpass', 400, .7); },
     // The net: a soft swish of air. The shovel: a bite into earth and a scatter of soil.
     swish() { if (!live()) return; const t = ac.currentTime, d = place(.035, 0, 1); hiss(d, t, .2, .8, 'bandpass', 1800, .6); },
     shovel() { if (!live()) return; const t = ac.currentTime, d = place(.05, 0, 1); hiss(d, t, .09, 1, 'bandpass', 500, 1.1); tone(d, t, 140, 90, .08, .5); hiss(d, t + .12, .25, .7, 'bandpass', 900 + Math.random() * 400, .8); hiss(d, t + .2, .18, .4, 'bandpass', 1400, 1); },

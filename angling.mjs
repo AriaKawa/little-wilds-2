@@ -1,9 +1,9 @@
 // Fishing, played: the rod (F), casting into water, the bite, the reel, the catch, the backpack (B), Old Tam's
 // market on the pier, and the quests of Old Tam and Lord Cinderbrow. The rules are in fishing.mjs.
-import { ZONES } from './world.mjs?v=41';
-import { income } from './sim.mjs?v=41';
-import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest, canFish, rollCursed, priceOf, CURSED_PRICE, BAIT, TACKLE, shopPrice, useBait, ferryOpen, ferryCost, DEMON_LANDS } from './fishing.mjs?v=41';
-import { mapsDone } from './sim.mjs?v=41';
+import { ZONES } from './world.mjs?v=42';
+import { income } from './sim.mjs?v=42';
+import { FISH, CATCHES, FISH_BY, TIERS, RODS, ICON, ITEM_COLS, ITEM_ROWS, STACK, BAG_MAX, GIVERS, clockOf, conditions, seasonNow, waterAt, rollCatch, fishWhere, fishWorth, marketPrice, cratePrice, wantedFish, bagAdd, bagCount, sellSlot, sellAll, bagWorth, bagCost, questNeeds, questOf, questState, questReady, questMark, wantHave, wantLabel, questSeeds, turnIn, TANK_BONUS, canDonate, tankBonus, tankMax, donate, TRAP, trapCost, trapCount, emptyTrap, openChest, canFish, rollCursed, priceOf, CURSED_PRICE, BAIT, TACKLE, shopPrice, useBait, ferryOpen, ferryCost, DEMON_LANDS } from './fishing.mjs?v=42';
+import { mapsDone } from './sim.mjs?v=42';
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const iconPos = i => `${(i % ITEM_COLS / (ITEM_COLS - 1) * 100).toFixed(3)}% ${(Math.floor(i / ITEM_COLS) / (ITEM_ROWS - 1) * 100).toFixed(3)}%`;
@@ -231,13 +231,13 @@ export function createAngling(g) {
     const all = rows + extraRows.map(f => f(s)).join('') + (strays.length ? `<button class="qt ready" data-qt="imp"><i class="item fork-i" style="background-position:${iconPos(ICON.fork)}"></i><span><b>${strays.length > 1 ? strays.length + ' imps have' : 'An imp has'} run off!</b><small class="go">Find ${strays.length > 1 ? 'them' : 'it'} and tap to send ${strays.length > 1 ? 'them' : 'it'} home</small></span></button>` : '');
     if (all !== lastTrack) { $('quests').innerHTML = all; lastTrack = all; }
   }
-  // Glides the camera to a giver: Old Tam at the end of his pier, the lord on his throne.
+  // Glides the camera to a giver: Old Tam at the end of his pier, the lord at the Throne Steps.
   function goTo(k) {
     if (UI[k]?.goTo) return UI[k].goTo();
     const o = Wd().objects.find(q => q.place === (k === 'lord' ? 'throne' : 'pier'));
     if (!o) return;
     V().focusZone(o.zone);
-    toast(k === 'lord' ? (S().objHp[o.id] === 0 ? 'Lord Cinderbrow waits on his throne in Demonreach.' : 'His throne lies in ruins in Demonreach, the isle to the north. Restore it and he returns.') : S().zones[o.zone].open ? 'Old Tam fishes from the end of the pier in Sunfall Coast. Click him to talk and to sell.' : 'Old Tam fishes from the pier in Sunfall Coast. Wake the glade beside it to meet him.');
+    toast(k === 'lord' ? (S().zones[o.zone].open ? 'Lord Cinderbrow holds court at the Throne Steps in Demonreach.' : 'Lord Cinderbrow waits at the Throne Steps in Demonreach, the isle to the north. Wake that glade to meet him.') : S().zones[o.zone].open ? 'Old Tam fishes from the end of the pier in Sunfall Coast. Click him to talk and to sell.' : 'Old Tam fishes from the pier in Sunfall Coast. Wake the glade beside it to meet him.');
   }
   $('quests').addEventListener('click', e => { const b = e.target.closest('[data-qt]'); if (!b) return; if (b.dataset.qt === 'imp') { const f = V().strays()[0]; if (f) V().glide(f.x, f.y, Math.max(2.2, V().cam.z)); return; } goTo(b.dataset.qt); });
 
@@ -304,10 +304,10 @@ export function createAngling(g) {
   }
   // The ferry: sail over to fish round the isle, or call on its lord.
   function openFerry() {
-    const s = S(), throne = Wd().objects.find(q => q.place === 'throne'), home = throne && s.objHp[throne.id] === 0;
+    const s = S(), throne = Wd().objects.find(q => q.place === 'throne'), home = throne && s.zones[throne.zone].open;
     show('ferry', `<div class="bag-head">${icon(ICON.boat, 'big')}<div><h2>The Demonreach ferry</h2><p class="sub">Tam's cousin Wynn rows you across the channel. "Mind the water, it bites back up there."</p></div></div>
       <div class="row"><button class="wood primary" data-ferry="sail">${icon(ICON.rod, 'tiny')}Sail and fish</button><button class="wood" data-ferry="lord">${icon(ICON.fork, 'tiny')}Call on Lord Cinderbrow</button><button class="wood" data-talk="bye">Stay here</button></div>
-      <p class="sub small">${home ? 'His throne stands again, and his imps play round it.' : 'His throne lies in ruins, but he will still receive you at the landing.'} About one fish in three from these waters comes up cursed.</p>`);
+      <p class="sub small">${home ? 'He holds court at the Throne Steps, his imps playing round him.' : 'The Throne Steps are still asleep, but he will receive you at the landing.'} About one fish in three from these waters comes up cursed.</p>`);
   }
 
   /* The aquarium: your donated fish swim in it, and each adds to all earnings for good. */
@@ -401,13 +401,13 @@ export function createAngling(g) {
   }
   function tapFolk(f) {
     if (f.kind === 'pier') { talk('fisher'); return true; }
-    if (f.kind === 'lord') { talk('lord'); return true; }
+    if (f.kind === 'lord') { f.wave = 1.6; talk('lord'); return true; }
     if (f.kind === 'imp' && (f.stray || f.lost)) {
       const s = S(), gain = questSeeds(2, inc()); s.seeds += gain; pulseSeeds(); audio.chime();
       f.stray = false; f.lost = false; f.homing = true; f.goal = { x: f.home.x, y: f.home.y }; f.wave = .8; f.pause = 0;
       let gift = '';
       if (Math.random() < .45) { const fish = rollCatch('sea', 'Demonreach', s.rod, conditions(s)), cursed = Math.random() < .5; if (!fish.junk && bagAdd(s, fish.id, cursed)) { s.caught[fish.id] = (s.caught[fish.id] || 0) + 1; gift = ` It drops a ${cursed ? 'cursed ' : ''}${fish.name.toLowerCase()} at your feet.`; jot('fish:' + fish.id); } }
-      toast(`The imp scampers home to the throne · +${fmt(gain)} seeds.${gift}`); save(); hud(); return true;
+      toast(`The imp scampers home to its lord · +${fmt(gain)} seeds.${gift}`); save(); hud(); return true;
     }
     if (f.kind === 'imp') { f.wave = .9; f.pause = 1.5; audio.nibble(); toast(IMP[Math.floor(Math.random() * IMP.length)]); return true; }
     return false;

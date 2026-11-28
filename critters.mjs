@@ -111,7 +111,7 @@ function deerLegs(H, hx, fx, A, k, pose, p, bob, far) {
 const eye = (x, y, closed, c = 'e') => closed ? { d: [[x - 1, y + 1], [x, y + 1]], c: 'b!' } : { d: [[x, y]], c };
 
 export const CRITTERS = {
-  imp: { stride: 1.3 }, // Demonreach: a little horned imp, painted (assets/imp.png); it has no drawn shape.
+  imp: { stride: 4 }, imp2: { stride: 4 }, imp3: { stride: 4.5 }, imp4: { stride: 3.5 }, // more imps: ember, violet and soot (assets/imp-2.png ...) // Demonreach: a little horned imp, painted (assets/imp.png); it has no drawn shape.
   deer: { stride: 2.2, // Spirit deer: a red-brown deer with a pale rump and belly, and antlers of glowing mint.
     w: 36, h: 38, pal: { b: '#b9804c', c: '#efdcb8', k: '#8a5c38', h: '#3e2a1c', x: '#a8f2d6', e: '#1e140c', n: '#2a1c14' },
     build(pose, p) {
@@ -336,6 +336,8 @@ export function useDeerSheet(img, fawn = null) { deerSheet = img; fawnSheet = fa
 // Other painted creatures in the same layout (the imps of Demonreach: assets/imp.png).
 const SHEETS = {};
 export function useSheet(name, img) { if (img) { SHEETS[name] = img; made.clear(); } }
+// Which imp to draw for variant v (0-3), falling back to the first imp if that sheet did not load.
+export const impName = v => v > 0 && SHEETS['imp' + (v + 1)] ? 'imp' + (v + 1) : 'imp';
 function ownSheet(sheet, cell) { const cw = sheet.width / 12, c = document.createElement('canvas'); c.width = cw; c.height = sheet.height; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(sheet, cell * cw, 0, cw, sheet.height, 0, 0, cw, sheet.height); return c; }
 const SHEET_POSE = { stand: 8, graze: 9, sleep: 10, leap: 11 };
 function fromSheet(cell, fawn) {
@@ -420,6 +422,24 @@ const SPIRIT_ART = [
         { d: [[-3, -12], [-2, -12], [2, -12], [3, -12]], c: 'e' }, nap ? { d: [[-3, -12], [2, -12]], c: 'e' } : { d: [[-2, -12], [2, -12]], c: 'x' },
         { d: [[-1, -9], [0, -9]], c: 'b!' },
         ...(work ? [{ d: [[-11, -21], [11, -21], [-12, -16], [12, -15]], c: 'x' }] : []),
+      ];
+    },
+  },
+  { // Woodkin, who fells grown trees for wood.
+    w: 30, h: 32, pal: { b: '#8a5a34', t: '#e2bd84', r: '#b98a52', l: '#78b84e', h: '#6b4a2a', m: '#c4ced4', e: '#20140a', c: '#e89a7c' },
+    build(f) {
+      const nap = f === 1, up = f === 3, strike = f === 2, sq = nap ? .9 : 1;
+      const axe = up ? [[4, -11, 9, -20], [7.5, -21.5, 1.6]] : strike ? [[4, -10, 11, -6], [12, -5, 1.6]] : [[4, -9, 8, -4], [8.6, -3, 1.4]];
+      return [
+        { l: [-2.4, -2.6, -5, -.4, 2.2], c: 'b' }, { l: [2.4, -2.6, 5, -.4, 2.2], c: 'b' },
+        { e: [0, -9 * sq, 6.4, 7.6 * sq], c: 'b' },
+        { e: [0, -16.2 * sq, 6.2, 2.2], c: 't', flat: 1 }, { e: [0, -16.2 * sq, 3.6, 1.2], c: 'r', flat: 1, ol: false }, { d: [[0, Math.round(-16.6 * sq)]], c: 'r' },
+        { d: [[-4, -12], [-4, -9], [4, -11], [4, -7], [-3, -5], [2, -4], [-1, -13]].map(([x, y]) => [x, Math.round(y * sq)]), c: 'b_' },
+        { l: [1.5, -17.5 * sq, 2.6, -22 * sq, 1.1], c: 'l', ol: false }, { e: [4.2, -22.6 * sq, 2, 1.2, -.5], c: 'l' }, { e: [.6, -21 * sq, 1.6, 1, .6], c: 'l' },
+        eye(-2, Math.round(-10 * sq), nap), eye(2, Math.round(-10 * sq), nap), { d: [[-4, Math.round(-8 * sq)], [3, Math.round(-8 * sq)]], c: 'c' },
+        { l: [-5.5, -9 * sq, -7.5, -6 * sq, 1.8], c: 'b' },
+        ...(nap ? [] : [{ l: [axe[0][0], axe[0][1], axe[0][2], axe[0][3], 1.4], c: 'h' }, { e: [axe[1][0], axe[1][1], 2.4, axe[1][2], up ? .3 : strike ? 1.3 : .9], c: 'm' }]),
+        ...(strike ? [{ d: [[13, -9], [14, -7], [12, -3]], c: 't' }] : []),
       ];
     },
   },

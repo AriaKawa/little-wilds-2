@@ -1,14 +1,18 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=41';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=41';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=41';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf } from './critters.mjs?v=41';
-import { steer, standable, overWater, escape } from './nav.mjs?v=41';
-import { trapCount } from './fishing.mjs?v=41';
-import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=41';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=42';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=42';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=42';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf, impName } from './critters.mjs?v=42';
+import { steer, standable, overWater, escape } from './nav.mjs?v=42';
+import { trapCount } from './fishing.mjs?v=42';
+import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=42';
+import { grownOf, portalSpot, portalStage, PORTAL_ZONE } from './timber.mjs?v=42';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// The demon isle's sparks are embers, not green shoots.
+const EMBERS = ['#ffd9a0', '#ff9a5a', '#ff6a4a', '#fff1d0'];
+const demonAt = (x, y) => !!LANDS[landAtTexel(x, y)]?.demon;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const SIZE = 64;
 // How many plants of each grass style stay live to carry the wind, rather than being baked still.
@@ -50,7 +54,7 @@ function floraAtlas(P, style = 'original') {
   for (let pose = 0; pose < 3; pose++) {
     const lean = pose - 1, X = pose * cw;
     [[3, 8, 0], [5, 7, 1], [4, 6, 1]].forEach(([x, top, l], k) => { for (let y = top; y < ch; y++) dot(X + x + (y < 9 ? lean * l : 0), y, tone(.72 + k * .22)); });
-    [[2, 3], [4, 1], [6, 4], [3, 5]].forEach(([x, top], k) => { for (let y = top; y < ch; y++) dot(X + x + (y < 6 ? lean : 0) + (y < 3 ? lean : 0), ch + y, tone(.7 + k * .17, 8)); });
+    [[2, 3], [4, 1], [6, 4], [3, 5]].forEach(([x, top], k) => { for (let y = top; y < ch; y++) dot(X + x + (y < 6 ? lean : 0) + (y < 3 ? lean : 0), ch + y, tone(.7 + k * .17, P.demon ? 0 : 8)); });
     P.flowers.forEach((col, f) => {
       const r = 2 + f; const fx = X + 4 + lean, fy = r * ch + 3;
       for (let y = fy + 1; y < (r + 1) * ch; y++) dot(X + 4 + (y < fy + 4 ? lean : 0), y, tone(.78));
@@ -121,8 +125,9 @@ function lykeAtlas(P, cw, ch) {
   c.width = Math.max(CW_ * 3, SPER * sw); c.height = Y0 + 6 * sh;
   const g = c.getContext('2d');
   const mixc = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t), rgb = a => `rgb(${a.map(v => clamp(v, 0, 255) | 0).join(',')})`;
-  const m = (P.grass[0] + P.grass[1] + P.grass[2]) / 3, sage = mixc(P.grass, [m, m + 8, m], .14);
-  const SH = [mixc(sage, [18, 44, 30], .55), sage.map(v => v * .78), sage.map(v => v * .94), mixc(sage, P.lush, .3).map(v => v * 1.04), mixc(mixc(sage, P.lush, .55), [214, 236, 170], .14).map(v => v * 1.08)];
+  const m = (P.grass[0] + P.grass[1] + P.grass[2]) / 3, sage = P.demon ? P.grass : mixc(P.grass, [m, m + 8, m], .14);
+  const dark = P.demon ? [40, 14, 22] : [18, 44, 30], tip = P.demon ? [255, 176, 120] : [214, 236, 170];
+  const SH = [mixc(sage, dark, .55), sage.map(v => v * .78), sage.map(v => v * .94), mixc(sage, P.lush, .3).map(v => v * 1.04), mixc(mixc(sage, P.lush, .55), tip, .14).map(v => v * 1.08)];
   const shade = SH.map(rgb), root = SH.map(s => rgb(s.map(v => v * .8)));
   // One blade with its root at (X + x, bottom - 1), inside a box `wide` px across starting at X.
   const blade = (X, bottom, wide, x, len, w, slope, bend, s) => {
@@ -282,7 +287,7 @@ export function createRenderer(canvas, world, land, images) {
   const TG = 8, tgw = TW / TG, tint = new Uint8Array(tgw * (TH / TG)), tinted = new Map();
   for (let y = 0, i = 0; y < TH / TG; y++) for (let x = 0; x < tgw; x++, i++) tint[i] = Math.max(0, Math.min(4, Math.round((hillShade(x * TG + 4, y * TG + 4) - 1) / .075) + 2));
   function plants(px, py) {
-    const b = world.biome[Math.min(TH - 1, py | 0) * TW + (px | 0)], t = tint[Math.min(TH / TG - 1, py / TG | 0) * tgw + Math.min(tgw - 1, px / TG | 0)];
+    const b = world.biome[Math.min(TH - 1, py | 0) * TW + (px | 0)], t0 = tint[Math.min(TH / TG - 1, py / TG | 0) * tgw + Math.min(tgw - 1, px / TG | 0)], t = LANDS[b]?.demon ? Math.min(t0, 2) : t0; // no pale sunlit tufts on the demon isle
     if (t === 2) return flora[b].c;
     const key = b * 5 + t; let c = tinted.get(key);
     if (!c) {
@@ -405,16 +410,21 @@ export function createRenderer(canvas, world, land, images) {
   const chunksIn = (z, pad = 0) => { const out = [], x0 = cam.x - W / 2 / z - 12 - pad, x1 = cam.x + W / 2 / z + 12 + pad, y0 = cam.y - H / 2 / z - pad, y1 = cam.y + H / 2 / z + 14 + pad;
     for (let cy = Math.max(0, Math.floor(y0 / FC)); cy <= Math.min(FROWS - 1, Math.floor(y1 / FC)); cy++) for (let cx = Math.max(0, Math.floor(x0 / FC)); cx <= Math.min(FCOLS - 1, Math.floor(x1 / FC)); cx++) out.push(cy * FCOLS + cx);
     return out; };
-  let grassGaps = 0, grassTiles = 0; // for testing: on-screen grass tiles not baked yet
+  let grassGaps = 0, grassTiles = 0, grassIn = 0; // for testing: on-screen grass tiles not baked yet
   function drawFlora(s, time, dt, pointer) {
     const z = cam.z;
     if (grass === 'none') return;
-    const t = reduced || s.paused ? 0 : time / 1000, f = shown || s.h, fade = clamp((z - .6) / .25, 0, 1);
+    const t = reduced || s.paused ? 0 : time / 1000, f = shown || s.h, target = clamp((z - .6) / .25, 0, 1);
     // Bake what is on screen first. Zoomed out, when no grass is drawn, bake much of the view ahead of time, nearest
     // the mouse first (the wheel zooms towards it), so the meadow is ready wherever the camera comes down. A frame
     // that is already running late bakes less; a frame with no grass to draw can afford more.
-    const want = bakeRes(), lyke = !!flora[0].strands, end = performance.now() + (!fade ? 7 : dt > .02 ? 2 : 3.5);
-    const todo = chunksIn(Math.max(z, .45)).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
+    const want = bakeRes(), lyke = !!flora[0].strands, gaps = target > 0 && chunksIn(z).some(i => !baked.has(i) || baked.get(i).r !== want);
+    // Coming down from far out, the meadow waits until the tiles in view are ready, then fades in whole, rather than
+    // appearing patch by patch.
+    if (!gaps || grassIn >= 1 || target < grassIn) grassIn += (target - grassIn) * (target < grassIn ? 1 : Math.min(1, dt * 9));
+    const fade = grassIn;
+    const end = performance.now() + (gaps ? 14 : !fade ? 7 : dt > .02 ? 2 : 3.5);
+    const todo = chunksIn(Math.max(z, .45), z >= .6 ? 160 / z : 0).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
     if (todo.length) {
       const P = pointer ? toWorld(pointer.x, pointer.y) : cam, mx = P.x / FC, my = P.y / FC, d = new Map();
       for (const i of todo) d.set(i, (i % FCOLS + .5 - mx) ** 2 + (Math.floor(i / FCOLS) + .5 - my) ** 2 * 1.4);
@@ -495,18 +505,22 @@ export function createRenderer(canvas, world, land, images) {
     const items = [], z = cam.z, lx = cam.x - W / 2 / z - 70, hx = cam.x + W / 2 / z + 70, ly = cam.y - H / 2 / z - 10, hy = cam.y + H / 2 / z + 120;
     // Far out, anything smaller than a few pixels on screen is left to the ground colours: it could not be seen anyway.
     const tiny = 6 / z;
-    for (const o of world.objects) { if (o.place === 'pier' || o.size < tiny && !o.place) continue; const x = o.x * CELL, y = o.y * CELL; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, o }); }
+    for (const o of world.objects) { if (o.place === 'pier' || o.place === 'throne' || o.size < tiny && !o.place) continue; const x = o.x * CELL, y = o.y * CELL; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, o }); }
     for (const a of s.spirits) if (a !== carry) items.push({ y: (a.ry ?? a.y) * CELL, a });
     const night = clamp((Math.cos((s.age / 480) % 1 * 6.283) * -1 - .35) / .65, 0, 1) > .4;
     for (const c of critters) if (PETS[c.kind]) { if (!s.paused) stepPet(s, c, dt, night); const x = c.x, y = c.y; if (x > lx && x < hx && y > ly && y < hy) items.push({ y, c }); }
     for (const t of s.trees) { const y = t.y * CELL; if (z < .5 && hash(t.x * 7 | 0, t.y * 7 | 0, 3) > .5) continue; if (t.x * CELL > lx && t.x * CELL < hx && y > ly && y < hy) items.push({ y, t }); }
+    if (z >= .5) for (const q of s.stumps || []) { const y = q.y * CELL; if (q.x * CELL > lx && q.x * CELL < hx && y > ly && y < hy) items.push({ y, stump: q }); }
+    for (let n = falling.length - 1; n >= 0; n--) { const f = falling[n]; if (time - f.t0 > 2600) { falling.splice(n, 1); continue; } items.push({ y: f.t.y * CELL, fall: f }); }
+    { const P = portalSpot(world); if (P && s.zones[PORTAL_ZONE]?.open && P.x > lx - 40 && P.x < hx + 40 && P.y > ly && P.y < hy) items.push({ y: P.y, portal: P }); else portalHit = null; }
     for (const f of folk) { if (!s.paused) stepFolk(f, dt); if (f.x > lx && f.x < hx && f.y > ly && f.y < hy) items.push({ y: f.sortY ?? f.y, f }); }
-    for (const [kind, zone, row] of KEEPERS) { const st = stallOf(world, zone); if (st && s.zones[zone]?.open && st.x > lx && st.x < hx && st.y > ly && st.y < hy) items.push({ y: st.y, stall: { st, row } }); }
     items.sort((a, b) => a.y - b.y);
     const atlas = images.world, spirits = images.spirits, tNow = time / 1000;
     const art = drawArt;
     for (const it of items) {
-      if (it.stall) { drawStall(it.stall); continue; }
+      if (it.stump) { drawStump(s, it.stump); continue; }
+      if (it.fall) { drawFalling(s, it.fall, time); continue; }
+      if (it.portal) { drawPortal(s, it.portal, tNow); continue; }
       if (it.o) {
         const o = it.o, x = sx(o.x * CELL), y = sy(o.y * CELL), hp = s.objHp ? s.objHp[o.id] : o.hp, size = o.size * z, born = revives.get(o.id);
         const foot = z > .9 ? underfoot(artSrc(o, hp > 0 ? o.dead : o.live), o.size, o.art, x, y, o.place === 'farm') : null;
@@ -528,8 +542,8 @@ export function createRenderer(canvas, world, land, images) {
           if (o.live === 11 && !o.place && !reduced) { const b = .5 + Math.sin(tNow * 2 + o.x) * .5; ctx.globalAlpha = .18 + b * .2; ctx.fillStyle = '#b8ffe6'; ctx.beginPath(); ctx.arc(x, y - size * .55, size * .32, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
         }
       } else if (it.t) {
-        const t = it.t, g = Math.min(1, (s.age - t.born) / 9), x = sx(t.x * CELL), y = sy(t.y * CELL), size = (10 + 28 * g) * SHRINK * z;
-        const land = world.biome[Math.min(TH - 1, Math.floor(t.y * CELL)) * TW + Math.floor(t.x * CELL)], tb = images.biomes[land], src = tb ? treeBuild([tb, 96, 0, 96, 96], Math.imul(Math.floor(t.x * 7 + t.y * 13), 2654435761) >>> 30) : [atlas, (t.blossom ? 2 : 1) * SIZE, 0, SIZE, SIZE];
+        const t = it.t, g = grownOf(s, t), x = sx(t.x * CELL), y = sy(t.y * CELL), size = (10 + 28 * g) * SHRINK * z;
+        const { land, src } = treeSrc(t);
         const foot = z > .9 ? underfoot(src, size / z, land, x, y, false) : null;
         tone = land; blit(...src, x, y, size, size); tone = -1;
         grassFoot(foot, land, Math.floor(t.y) * CW + Math.floor(t.x), Math.floor(t.x * 7 + t.y), false);
@@ -545,7 +559,9 @@ export function createRenderer(canvas, world, land, images) {
         // One pose squashing and stretching in a hop: smooth at any frame rate, with no sprite popping.
         a.air = (a.air || 0) + (((a.type !== 2 && world.nav && overWater(world, a.rx, a.ry)) ? 1 : 0) - (a.air || 0)) * Math.min(1, dt * 14);
         const hop = walking && !still ? Math.abs(Math.sin((a.anim || 0) * 8)) : 0, q = still ? 0 : walking ? (hop - .45) * .13 : a.working ? Math.sin(tNow * 5 + a.x) * .05 : Math.sin(tNow * 2 + a.x) * .018;
-        const frame = still ? 0 : a.nap > 0 ? 1 : a.working ? 3 : 0, float = (a.type === 2 ? 3 + Math.sin(tNow * 2 + a.x) : 0) + Math.sin(a.air * Math.PI / 2) * 5, size = (a.type === 3 ? 20 : 15) * z;
+        const chop = a.type === 4 && a.working && !still, frame = still ? 0 : a.nap > 0 ? 1 : chop ? (Math.sin(tNow * 7 + a.x) > 0 ? 3 : 2) : a.working ? 3 : 0;
+        if (chop && (a.chopT = (a.chopT || 0) + dt) > .9) { a.chopT = 0; burst(a.rx * CELL + (a.dir || 1) * 6, a.ry * CELL - 6, 6, ['#e2bd84', '#b98a52', '#8a5a34'], 16); api.onChop?.(); }
+        const float = (a.type === 2 ? 3 + Math.sin(tNow * 2 + a.x) : 0) + Math.sin(a.air * Math.PI / 2) * 5, size = (a.type === 3 ? 20 : 15) * z;
         ctx.fillStyle = 'rgba(30,24,18,.28)'; ctx.beginPath(); ctx.ellipse(x, y, size * (.28 - hop * .06), size * .09, 0, 0, 7); ctx.fill();
         { const c = spiritCanvas(a.type, frame, a.dir < 0), k = z * SHRINK / SCALE, w = c.width * k * (1 - q), h = c.height * k * (1 + q); ctx.drawImage(c, snapX(x - w / 2), snapY(y - (float + hop * 2.4) * SHRINK * z - h), w, h); if (float < 1) grassOver(a.rx * CELL, a.ry * CELL, w / z * .3, Math.max(1.2, h / z * .22 - hop * 2.4 * SHRINK), walking ? a.anim : 0); }
         if (a.type === 2 && !s.paused && !reduced && quality > 0) { // Rainwisps carry their own little weather; filling a riverbed, a downpour.
@@ -619,6 +635,7 @@ export function createRenderer(canvas, world, land, images) {
   const ICON_BOBBER = 12;
   const isRoad = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= TW || y >= TH) return false; const r = world.road[y * TW + x]; return r === 1 || r === 2 || r === 4; };
   // Ground an imp may stand on: dry, not sea, not rock.
+  const dryLine = (x0, y0, x1, y1) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 3); for (let k = 1; k <= n; k++) if (!groundOk(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n)) return false; return true; };
   const groundOk = (x, y) => x >= 0 && y >= 0 && x < TW && y < TH && !world.blocked[Math.floor(y / CELL) * CW + Math.floor(x / CELL)] && world.waterT[Math.floor(y) * TW + Math.floor(x)] === 255;
   function spawnFolk(s, time) {
     if (time - folkAt < 1000) return; folkAt = time;
@@ -627,12 +644,12 @@ export function createRenderer(canvas, world, land, images) {
       // Old Tam fishes from his pier as soon as its glade is awake, mended or not; the others wait for their place.
       const here = (o.place === 'pier' ? s.zones[o.zone]?.open : s.objHp?.[o.id] === 0) && Math.hypot(o.x * CELL - cam.x, o.y * CELL - cam.y) < 1100, f = folk.find(q => q.place === o.id);
       if (!here && f) { for (let k = folk.length - 1; k >= 0; k--) if (folk[k].place === o.id) folk.splice(k, 1); continue; }
-      if (here && !f && o.place === 'throne') { // the demon lord sits his throne (he is part of its art); his imps play around it
+      if (here && !f && o.place === 'throne') { // the demon lord stands at the Throne Steps; his imps play around him
         const x = o.x * CELL, y = o.y * CELL;
         folk.push({ place: o.id, kind: 'lord', land: o.land, zone: o.zone, x, y: y + .5, home: { x, y }, alpha: 1, stay: true, wave: 0, pause: 0, dist: 0, dir: 1, size: o.size });
         for (let k = 0; k < 5; k++) {
           let p = null; for (let n = 0; n < 30 && !p; n++) { const a = Math.random() * 6.283, r = 24 + Math.random() * 50, q = { x: x + Math.cos(a) * r, y: y + 10 + Math.sin(a) * r * .6 }; if (groundOk(q.x, q.y)) p = q; }
-          if (p) folk.push({ place: o.id, kind: 'imp', land: o.land, zone: o.zone, x: p.x, y: p.y, home: { x, y: y + 10 }, alpha: 0, wave: 0, pause: Math.random() * 3, dist: 0, dir: Math.random() < .5 ? 1 : -1, pose: 'stand' });
+          if (p) folk.push({ place: o.id, kind: 'imp', land: o.land, zone: o.zone, x: p.x, y: p.y, home: { x, y: y + 10 }, alpha: 0, wave: 0, pause: Math.random() * 3, dist: 0, dir: Math.random() < .5 ? 1 : -1, pose: 'stand', variant: k % 4 });
         }
         continue;
       }
@@ -642,7 +659,7 @@ export function createRenderer(canvas, world, land, images) {
       }
     }
   }
-  // Pip's bug stall in Honey Meadow and Bramwell's dig tent at Red Terrace, each with its keeper beside it.
+  // Pip in Honey Meadow and Bramwell at Red Terrace, each standing in the open.
   const KEEPERS = [['pip', PIP_ZONE, 0], ['bram', BRAM_ZONE, 1]];
   function spawnKeepers(s) {
     for (const [kind, zone, row] of KEEPERS) {
@@ -658,22 +675,22 @@ export function createRenderer(canvas, world, land, images) {
     if (f.lost) { f.pose = Math.sin(performance.now() / 400 + f.x) > .6 ? 'graze' : 'stand'; return; }
     if (!f.stray && !f.homing && !folk.some(q => q.stray || q.lost) && Math.random() < dt / 150) {
       // only onto woken ground, where you can see it and reach it
-      for (let n = 0; n < 30 && !f.stray; n++) { const a = Math.random() * 6.283, r = 90 + Math.random() * 300, q = { x: f.home.x + Math.cos(a) * r, y: f.home.y + Math.sin(a) * r * .7 }; if (groundOk(q.x, q.y) && s_?.zones[world.zone[Math.floor(q.y / CELL) * CW + Math.floor(q.x / CELL)]]?.open) { f.goal = q; f.stray = true; f.pause = 0; } }
+      for (let n = 0; n < 30 && !f.stray; n++) { const a = Math.random() * 6.283, r = 90 + Math.random() * 300, q = { x: f.home.x + Math.cos(a) * r, y: f.home.y + Math.sin(a) * r * .7 }; if (groundOk(q.x, q.y) && dryLine(f.x, f.y, q.x, q.y) && s_?.zones[world.zone[Math.floor(q.y / CELL) * CW + Math.floor(q.x / CELL)]]?.open) { f.goal = q; f.stray = true; f.pause = 0; } }
       if (f.stray) api.onImp?.(f);
     }
     if (f.pause > 0) { f.pause -= dt; return; }
     if (!f.goal) {
-      for (let n = 0; n < 8 && !f.goal; n++) { const a = Math.random() * 6.283, r = 16 + Math.random() * 60, q = { x: f.home.x + Math.cos(a) * r, y: f.home.y + Math.sin(a) * r * .6 }; if (groundOk(q.x, q.y)) f.goal = q; }
+      for (let n = 0; n < 8 && !f.goal; n++) { const a = Math.random() * 6.283, r = 16 + Math.random() * 60, q = { x: f.home.x + Math.cos(a) * r, y: f.home.y + Math.sin(a) * r * .6 }; if (groundOk(q.x, q.y) && dryLine(f.x, f.y, q.x, q.y)) f.goal = q; }
       if (!f.goal) { f.pause = 1; return; }
     }
-    const dx = f.goal.x - f.x, dy = f.goal.y - f.y, d = Math.hypot(dx, dy), v = Math.min(d, (f.stray || f.homing ? 24 : 10) * dt);
+    const dx = f.goal.x - f.x, dy = f.goal.y - f.y, d = Math.hypot(dx, dy), v = Math.min(d, (f.stray || f.homing ? 15 : 8) * dt);
     if (d < 1) { f.goal = null; if (f.stray) { f.stray = false; f.lost = true; } f.homing = false; f.pause = 1 + Math.random() * 4; f.pose = Math.random() < .35 ? 'graze' : 'stand'; return; }
     if (!groundOk(f.x + dx / d * v, f.y + dy / d * v)) { if (f.stray) { f.stray = false; f.lost = true; } else if (f.homing) { f.x += dx / d * v; f.y += dy / d * v; return; } f.goal = null; return; }
     f.x += dx / d * v; f.y += dy / d * v; f.dist += v; f.pose = 'walk'; if (Math.abs(dx) > .3) f.dir = dx > 0 ? 1 : -1;
   }
   function stepFolk(f, dt) {
     f.alpha = Math.min(1, f.alpha + dt * .6);
-    if (f.kind === 'lord') return;
+    if (f.kind === 'lord') { if (f.wave > 0) f.wave -= dt; return; }
     if (f.kind === 'imp') { stepImp(f, dt); return; }
     if (f.wave > 0) { f.wave -= dt; return; }
     if (f.stay) return; // the fisherman keeps to his pier
@@ -688,12 +705,6 @@ export function createRenderer(canvas, world, land, images) {
       if (!opts.length) { f.pause = 1; return; }
     }
     const v = 6 * dt; f.x += f.hx * v; f.y += f.hy * v; f.dist += v; if (Math.abs(f.hx) > .3) f.dir = f.hx > 0 ? 1 : -1;
-  }
-  function drawStall({ st, row }) {
-    const img = images.stalls; if (!img) return;
-    const c = img.height, size = 34 * cam.z, x = sx(st.x), y = sy(st.y);
-    ctx.fillStyle = 'rgba(30,24,18,.2)'; ctx.beginPath(); ctx.ellipse(x, y - cam.z, size * .42, size * .09, 0, 0, 7); ctx.fill();
-    ctx.drawImage(img, row * c, 0, c, c, snapX(x - size / 2), snapY(y - size + cam.z), size, size);
   }
   // Dig spots: a star of cracks in the ground. Dug holes linger a minute, then grass closes over them.
   function drawDigs(s, holes) {
@@ -725,22 +736,67 @@ export function createRenderer(canvas, world, land, images) {
     if (ring) { ctx.strokeStyle = 'rgba(255,250,230,.6)'; ctx.lineWidth = 2; ctx.setLineDash([4, 5]); ctx.lineDashOffset = -time * .02; ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r * cam.z, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
     if (swing) { const k = (performance.now() - swing.t) / 300; ctx.globalAlpha = 1 - k; ctx.strokeStyle = '#fffaf0'; ctx.lineWidth = Math.max(2, 3 * (1 - k) * cam.z); ctx.beginPath(); ctx.arc(sx(swing.x), sy(swing.y), swing.r * cam.z * (.6 + k * .5), -2.4 + k * 2, -.4 + k * 2); ctx.stroke(); ctx.globalAlpha = 1; }
   }
+  // Planted trees take the art of the land they stand in.
+  function treeSrc(t) {
+    const land = world.biome[Math.min(TH - 1, Math.floor(t.y * CELL)) * TW + Math.floor(t.x * CELL)], tb = images.biomes[land];
+    return { land, src: tb ? treeBuild([tb, 96, 0, 96, 96], Math.imul(Math.floor(t.x * 7 + t.y * 13), 2654435761) >>> 30) : [images.world, (t.blossom ? 2 : 1) * SIZE, 0, SIZE, SIZE] };
+  }
+  // A stump where a tree was felled, until it sprouts again.
+  function drawStump(s, q) {
+    const img = images.items; if (!img) return;
+    const z = cam.z, size = 9 * z, x = sx(q.x * CELL), y = sy(q.y * CELL);
+    ctx.fillStyle = 'rgba(30,24,18,.22)'; ctx.beginPath(); ctx.ellipse(x, y, size * .4, size * .12, 0, 0, 7); ctx.fill();
+    ctx.drawImage(img, 62 % 16 * 32, Math.floor(62 / 16) * 32, 32, 32, snapX(x - size / 2), snapY(y - size * .8), size, size);
+  }
+  // A felled tree: it leans, tips faster and faster, hits the ground with a bounce and a burst of leaves and chips,
+  // lies a moment, then the Woodkin's logs are all that is left of it.
+  const falling = [];
+  function drawFalling(s, f, time) {
+    const k = (time - f.t0) / 1000, z = cam.z, x = sx(f.t.x * CELL), y = sy(f.t.y * CELL), size = 38 * SHRINK * z, { land, src } = treeSrc(f.t);
+    const tip = Math.min(1, k / 1.05), ang = f.dir * (Math.PI / 2 - .12) * tip * tip, land_ = k > 1.05, bounce = land_ ? Math.max(0, Math.sin((k - 1.05) * 14) * Math.exp(-(k - 1.05) * 6)) * .08 : 0;
+    if (land_ && !f.landed) { f.landed = true; const lx = f.t.x * CELL + f.dir * 16, ly = f.t.y * CELL - 3; burst(lx, ly, 22, ['#8ad05a', '#c9f07a', '#e2bd84', '#b98a52'], 30); rings.push({ x: lx, y: ly + 2, from: 4, to: 22, age: 0, life: .5, color: '#d8c8a8' }); api.onFell?.(); }
+    ctx.globalAlpha = k > 1.9 ? Math.max(0, 1 - (k - 1.9) / .6) : 1;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang - f.dir * bounce); tone = land; blit(...src, 0, 0, size, size, false, null, false); tone = -1; ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+  // The spirit portal: a wooden gate facing you, built up stage by stage as wood is given. The next stage rises out
+  // of the ground over the last as wood goes in; finished, it glows.
+  let portalHit = null;
+  function drawPortal(s, P, tNow) {
+    const img = images.portal; if (!img) return;
+    const st = portalStage(s), c = img.height, z = cam.z, size = 62 * z, x = sx(P.x), y = sy(P.y);
+    ctx.fillStyle = 'rgba(30,24,18,.25)'; ctx.beginPath(); ctx.ellipse(x, y, size * .42, size * .07, 0, 0, 7); ctx.fill();
+    const cell = i => ctx.drawImage(img, i * c, 0, c, c, snapX(x - size / 2), snapY(y - size + z), size, size);
+    if (st.done) { const b = .5 + Math.sin(tNow * 1.6) * .5, g = ctx.createRadialGradient(x, y - size * .42, 0, x, y - size * .42, size * .42); g.addColorStop(0, `rgba(200,255,236,${.35 + b * .25})`); g.addColorStop(1, 'rgba(200,255,236,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y - size * .42, size * .3, size * .4, 0, 0, 7); ctx.fill(); }
+    cell(Math.min(st.stage, 5));
+    if (!st.done && st.into > 0) { const k = st.into / st.need, edge = y - size * k; ctx.save(); ctx.beginPath(); ctx.rect(x - size, edge, size * 2, y - edge + z * 2); ctx.clip(); ctx.globalAlpha = .9; cell(st.stage + 1); ctx.restore(); ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(255,240,190,.5)'; ctx.fillRect(x - size * .4, edge, size * .8, Math.max(1, z * .6)); }
+    if (st.done && !reduced && Math.random() < .2) addParticle({ x: P.x + (Math.random() - .5) * 30, y: P.y - 10 - Math.random() * 30, vx: 0, vy: -8, g: -2, life: 1.4, age: 0, size: 1, color: ['#c8fff0', '#fff6d0', '#b8ffe6'][Math.floor(Math.random() * 3)] });
+    portalHit = { x: x - size * .42, y: y - size * .95, w: size * .84, h: size * .95 };
+    if (marks.portal) questBubble(x, y - size, marks.portal, tNow);
+  }
   // A quest giver's marker: a gold ! for a new quest, a green ? when you have what they asked for.
+  const MARK_ICON = { '!': 56, '?': 57 };
   function questBubble(x, top, mark, tNow) {
+    const ic = MARK_ICON[mark];
+    if (ic != null && images.items?.width && images.items.height >= 256) { const s = Math.max(18, 7.5 * cam.z), by = top - 4 * cam.z + Math.sin(tNow * 3) * cam.z; ctx.drawImage(images.items, ic % 16 * 32, Math.floor(ic / 16) * 32, 32, 32, Math.round(x - s / 2), Math.round(by - s), Math.round(s), Math.round(s)); return; }
     const by = top - 7 * cam.z + Math.sin(tNow * 3) * cam.z, r = Math.max(8, 3.4 * cam.z);
     ctx.fillStyle = mark === '?' ? '#e8ffd8' : '#fff6df'; ctx.strokeStyle = '#3a2e23'; ctx.lineWidth = Math.max(1.5, cam.z * .5);
     ctx.beginPath(); ctx.roundRect(x - r, by - r, r * 2, r * 1.8, r * .5); ctx.fill(); ctx.stroke();
     ctx.fillStyle = mark === '?' ? '#4f9a2e' : '#d8902a'; ctx.font = `700 ${Math.round(r * 1.3)}px "Pixelify Sans",Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(mark, x, by - r * .05);
   }
   function drawFolk(s, f, tNow) {
-    if (f.kind === 'lord') { // drawn with his throne; here only his hit area and his marker
-      const x = sx(f.x), y = sy(f.home.y), h = f.size * cam.z * .9;
+    if (f.kind === 'lord') { // Lord Cinderbrow, on his own two hooves: standing, or waving his claw when you speak to him
+      const sheet = images.lord, x = sx(f.x), y = sy(f.home.y);
+      if (!sheet) { const h = 30 * cam.z; f.sx = x; f.sy = y - h / 2; f.sh = h; return; }
+      const fw = sheet.width / 2, fh = sheet.height, k = cam.z / SCALE * .85, w = fw * k, h = fh * k, breathe = Math.sin(tNow * 1.6) * .35 * cam.z;
+      ctx.fillStyle = 'rgba(30,14,18,.3)'; ctx.beginPath(); ctx.ellipse(x, y, w * .3, h * .06, 0, 0, 7); ctx.fill();
+      ctx.save(); ctx.translate(snapX(x), 0); if (f.dir < 0) ctx.scale(-1, 1); ctx.drawImage(sheet, (f.wave > 0 ? 1 : 0) * fw, 0, fw, fh, -w / 2, snapY(y - h - breathe + cam.z * .5), w, h + breathe); ctx.restore();
       f.sx = x; f.sy = y - h / 2; f.sh = h;
       if (marks.lord) questBubble(x, y - h, marks.lord, tNow);
       return;
     }
     if (f.kind === 'imp') {
-      const ph = f.pose === 'walk' ? Math.floor(f.dist / strideOf('imp') * WALK_FRAMES) % WALK_FRAMES : 0, art = critterCanvas('imp', f.pose || 'stand', ph, f.dir < 0), k = cam.z / SCALE, w = art.width * k, h = art.height * k, x = sx(f.x), y = sy(f.y);
+      const name = impName(f.variant || 0), ph = f.pose === 'walk' ? Math.floor(f.dist / strideOf(name) * WALK_FRAMES) % WALK_FRAMES : 0, art = critterCanvas(name, f.pose || 'stand', ph, f.dir < 0), k = cam.z / SCALE, w = art.width * k, h = art.height * k, x = sx(f.x), y = sy(f.y);
       const hop = f.wave > 0 ? Math.abs(Math.sin(f.wave * 9)) * 4 * cam.z : 0;
       ctx.globalAlpha = f.alpha; ctx.fillStyle = 'rgba(30,18,24,.28)'; ctx.beginPath(); ctx.ellipse(x, y, w * .28, h * .07, 0, 0, 7); ctx.fill();
       ctx.drawImage(art, snapX(x - w / 2), snapY(y - h - hop + cam.z * .5), w, h); ctx.globalAlpha = 1;
@@ -900,7 +956,7 @@ export function createRenderer(canvas, world, land, images) {
     const z = cam.z, deep = (x, y) => { x |= 0; y |= 0; return x >= 0 && y >= 0 && x < TW && y < TH && world.waterT[y * TW + x] >= 170 && world.waterT[y * TW + x] < 255; };
     if (!s.paused && t > fishAt) {
       fishAt = t + 4 + Math.random() * 8;
-      const [x0, y0, x1, y1] = api.viewBox(), full = world.ponds.map((P, id) => id).filter(id => { const P = world.ponds[id]; return P.r > 0 && s.zones[id]?.water >= 1 && P.x + P.r > x0 && P.x - P.r < x1 && P.y + P.r > y0 && P.y - P.r < y1; });
+      const [x0, y0, x1, y1] = api.viewBox(), full = world.ponds.map((P, id) => id).filter(id => { const P = world.ponds[id]; return P.r > 0 && s.zones[id]?.water >= 1 && !LANDS[ZONES[id]?.land]?.demon && P.x + P.r > x0 && P.x - P.r < x1 && P.y + P.r > y0 && P.y - P.r < y1; });
       if (full.length && fish.length < 3) {
         const P = world.ponds[full[Math.floor(Math.random() * full.length)]];
         for (let k = 0; k < 30; k++) {
@@ -951,6 +1007,7 @@ export function createRenderer(canvas, world, land, images) {
     const z = s.zones[id];
     if (!z.open) return;
     const p = z.g / (GREEN * world.count[id]);
+    if (LANDS[ZONES[id].land].demon) { if (p > .5) out.push(['deer', id, 4]); if (z.done) out.push(['deer', id, 7], ['fawn', id, 5]); if (z.bloomed) out.push(['fawn', id, 8]); return; }
     if (p > .25) out.push(['butterfly', id, 0], ['butterfly', id, 1]);
     if (p > .5) out.push(['rabbit', id, 4]);
     if (p > .6) out.push(['butterfly', id, 2], ['bird', id, 3]);
@@ -1000,7 +1057,7 @@ export function createRenderer(canvas, world, land, images) {
     const def = petDef(c.kind, c.zone);
     c.alpha = Math.min(1, c.alpha + dt * .5);
     if (c.hearts > 0) { c.hearts -= dt; c.state = 'idle'; return; }
-    if (world.nav) { const q = c.nav ||= {}; q.x = c.x / CELL; q.y = c.y / CELL; if (escape(world, q, def.speed * dt / CELL)) { const x0 = c.x; c.x = q.x * CELL; c.y = q.y * CELL; c.dist += Math.abs(c.x - x0) + .01; c.dir = q.dir; c.state = 'walk'; c.pause = 0; c.tx = 0; return; } }
+    if (world.nav) { const q = c.nav ||= {}; q.x = c.x / CELL; q.y = c.y / CELL; if (escape(world, q, def.speed * dt / CELL, false, true)) { const x0 = c.x; c.x = q.x * CELL; c.y = q.y * CELL; c.dist += Math.abs(c.x - x0) + .01; c.dir = q.dir; c.state = 'walk'; c.pause = 0; c.tx = 0; return; } }
     if (c.pause > 0) {
       c.pause -= dt;
       if (c.pause <= 0) c.state = 'walk';
@@ -1017,7 +1074,7 @@ export function createRenderer(canvas, world, land, images) {
     c.step += dt;
     // Feel the way round trees, stones, houses and ponds; bound across streams.
     const q = c.nav ||= {}, x0 = c.x, y0 = c.y; q.x = c.x / CELL; q.y = c.y / CELL;
-    const r = world.nav ? steer(world, q, c.tx / CELL, c.ty / CELL, Math.min(d, def.speed * dt) / CELL, dt) : 'moving';
+    const r = world.nav ? steer(world, q, c.tx / CELL, c.ty / CELL, Math.min(d, def.speed * dt) / CELL, dt, false, true) : 'moving';
     if (!world.nav) { const v = Math.min(d, def.speed * dt); q.x += (c.tx - c.x) / d * v / CELL; q.y += (c.ty - c.y) / d * v / CELL; }
     c.x = q.x * CELL; c.y = q.y * CELL; c.dist += Math.hypot(c.x - x0, c.y - y0);
     if (Math.abs(c.x - x0) > .02) c.dir = c.x < x0 ? -1 : 1;
@@ -1027,7 +1084,7 @@ export function createRenderer(canvas, world, land, images) {
   const small = () => SHRINK;
   function drawPet(c, t) {
     const def = petDef(c.kind, c.zone), z = cam.z, x = sx(c.x), y = sy(c.y), walking = c.state === 'walk';
-    const land = ZONES[c.zone].land, name = c.kind === 'rabbit' ? 'rabbit' : land ? NATIVE[land] : c.kind;
+    const land = ZONES[c.zone].land, native = land ? NATIVE[land] : null, name = c.kind === 'rabbit' ? 'rabbit' : native === 'imp' ? impName(Math.floor(hash(c.zone, c.n, 47) * 4)) : native || c.kind;
     // The walk is driven by distance covered, not time, so feet stay planted on the ground as the body passes.
     // Rabbits bound instead: one hop per four texels, and every animal bounds over a stream.
     const f = small(c.kind), rabbit = c.kind === 'rabbit', cyc = (c.dist || 0) / (strideOf(name) * f), q = c.dist / (5 * f) % 1, hop = walking && rabbit && q > .15 && q < .9 ? Math.sin((q - .15) / .75 * Math.PI) : 0;
@@ -1178,6 +1235,9 @@ export function createRenderer(canvas, world, land, images) {
     startle(w) { if (w.kind === 'fish') { burst(w.o.x + w.o.dir * w.o.len * .5, w.o.y - 8, 8, ['#ffd36b', '#fff'], 16); return; } w.o.spook = 1.6; w.o.tx = w.o.x + (Math.random() - .5) * 300; w.o.ty = w.o.y + (Math.random() - .5) * 200; burst(w.o.x, w.o.y - 14, 6, ['#fff', '#ffe28a'], 14); },
     strays() { return folk.filter(f => f.kind === 'imp' && (f.stray || f.lost)); },
     hitFolk(px, py) { for (const f of folk) if (f.sx != null && Math.abs(px - f.sx) < Math.max(14, f.sh * .35) && Math.abs(py - f.sy) < Math.max(18, f.sh * .6)) return f; return null; },
+    portalBurst() { const P = portalSpot(world); if (!P) return; burst(P.x, P.y - 24, 40, ['#c8fff0', '#fff6d0', '#e2bd84', '#b8ffe6'], 40); rings.push({ x: P.x, y: P.y - 20, from: 6, to: 60, age: 0, life: 1.2, color: '#c8fff0' }); },
+    fell(t, dir) { falling.push({ t, dir: dir || 1, t0: performance.now() }); },
+    hitPortal(px, py) { const b = portalHit; return !!b && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h; },
     dirt(x, y) { burst(x, y - 3, 16, ['#8a6a48', '#6e5238', '#b08a62', '#c9a87a'], 26); },
     cheer(land) { for (const f of folk) if (f.land === land) { f.wave = 3; f.pause = 3; } },
     cam, resize, focusZone, focusAll, focusLand, zoomAt, pan, toCell, toWorld,
@@ -1192,10 +1252,10 @@ export function createRenderer(canvas, world, land, images) {
       for (let k = 0; k < fly && flyers.length < 40; k++) flyers.push({ x: from.x + (Math.random() - .5) * 26, y: from.y + (Math.random() - .5) * 26, age: -k * .05, life: .75 });
     },
     glow(z, color = '255,236,170') { const p = world.ponds[z]; glows.push({ x: p.x, y: p.y, age: 0, life: 3.4, color }); },
-    pop(cellX, cellY) { burst(cellX * CELL, cellY * CELL - 6, 18, ['#fff', '#d8f58f', '#ffe28a'], 26); rings.push({ x: cellX * CELL, y: cellY * CELL - 6, from: 2, to: 18, age: 0, life: .5, color: '#fff3b8' }); },
-    revived(o, time) { revives.set(o.id, time); const x = o.x * CELL, y = o.y * CELL - o.size * .4; burst(x, y, 12 + o.size * .5 | 0, ['#c9f07a', '#ffe28a', '#fff', '#8ad05a'], 30); rings.push({ x, y: y + o.size * .3, from: 4, to: 16 + o.size * .5, age: 0, life: .6, color: '#fff3b8' }); },
+    pop(cellX, cellY) { burst(cellX * CELL, cellY * CELL - 6, 18, demonAt(cellX * CELL, cellY * CELL) ? EMBERS : ['#fff', '#d8f58f', '#ffe28a'], 26); rings.push({ x: cellX * CELL, y: cellY * CELL - 6, from: 2, to: 18, age: 0, life: .5, color: '#fff3b8' }); },
+    revived(o, time) { revives.set(o.id, time); const x = o.x * CELL, y = o.y * CELL - o.size * .4; burst(x, y, 12 + o.size * .5 | 0, demonAt(x, y) ? EMBERS : ['#c9f07a', '#ffe28a', '#fff', '#8ad05a'], 30); rings.push({ x, y: y + o.size * .3, from: 4, to: 16 + o.size * .5, age: 0, life: .6, color: '#fff3b8' }); },
     sweep(z, color = '#fff3c4') { const p = world.ponds[z]; rings.push({ x: p.x, y: p.y, from: 8, to: 220, age: 0, life: 4.2, color }); burst(p.x, p.y, 70, ['#fff', '#ffe28a', '#c9f07a', '#ffc6dd'], 58); },
-    spark(cellX, cellY, amount, r) { const n = Math.min(4, amount * .28); for (let k = 0; k < n; k++) { if (Math.random() > n / 4 + .2) continue; const a = Math.random() * 6.28, q = Math.random() * r * CELL; addParticle({ x: cellX * CELL + Math.cos(a) * q, y: cellY * CELL + Math.sin(a) * q, vx: (Math.random() - .5) * 8, vy: -8 - Math.random() * 16, g: 3, life: .55 + Math.random() * .6, age: 0, size: .8 + Math.random() * .6, color: ['#d8f58f', '#fff2ab', '#9ddc6a'][k % 3] }); } },
+    spark(cellX, cellY, amount, r) { const n = Math.min(4, amount * .28); for (let k = 0; k < n; k++) { if (Math.random() > n / 4 + .2) continue; const a = Math.random() * 6.28, q = Math.random() * r * CELL; addParticle({ x: cellX * CELL + Math.cos(a) * q, y: cellY * CELL + Math.sin(a) * q, vx: (Math.random() - .5) * 8, vy: -8 - Math.random() * 16, g: 3, life: .55 + Math.random() * .6, age: 0, size: .8 + Math.random() * .6, color: (demonAt(cellX * CELL, cellY * CELL) ? EMBERS : ['#d8f58f', '#fff2ab', '#9ddc6a'])[k % 3] }); } },
     hitSpirit(s, px, py) { for (let i = s.spirits.length - 1; i >= 0; i--) { const a = s.spirits[i], size = (a.type === 3 ? 20 : 15) * cam.z, x = sx((a.rx ?? a.x) * CELL), y = sy((a.ry ?? a.y) * CELL); if (Math.abs(px - x) < Math.max(14, size * .4) && py > y - size && py < y + 6) return a; } return null; },
     draw(s, time, dt, opts) {
       if (anchor) { // A zoom around a point: ease the scale, then place the view so the point stays put.
