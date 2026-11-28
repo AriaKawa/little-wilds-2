@@ -1,8 +1,8 @@
 // Bugs and buried things: Pip the bug catcher in Honey Meadow and Bramwell the digger at Red Terrace. Rules only;
 // the net, the dig spots and their windows live in keepers.mjs. Everything you find goes into the same backpack as
 // your fish, so it is registered alongside them in FISH_BY, with a `kind` and the `buyer` who pays for it.
-import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=43';
-import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=43';
+import { CELL, CW, TW, TH, ZONES, LANDS, KIND } from './world.mjs?v=44';
+import { FISH_BY, GIVERS, questState, questSeeds, fishWorth } from './fishing.mjs?v=44';
 
 export const PIP_ZONE = 4, BRAM_ZONE = 12; // Honey Meadow in Hollow Vale; Red Terrace in Ember Basin
 // "2 fireflies", "3 praying mantises", "2 mammoth tusks".

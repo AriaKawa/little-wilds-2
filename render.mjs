@@ -1,12 +1,12 @@
 // Everything above the ground: flora, the dead-and-revived objects, spirits, wildlife, weather and fog.
-import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=43';
-import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=43';
-import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=43';
-import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf, impName } from './critters.mjs?v=43';
-import { steer, standable, overWater, escape } from './nav.mjs?v=43';
-import { trapCount } from './fishing.mjs?v=43';
-import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=43';
-import { grownOf, portalSpot, portalStage, PORTAL_ZONE } from './timber.mjs?v=43';
+import { TW, TH, LW, LH, CW, CH, CELL, ZONES, LANDS, REGIONS, WATER, SEA, hash, fbm, FC, FCOLS, FROWS, landAtTexel, lookOf, SHRINK, hillShade } from './world.mjs?v=44';
+import { GREEN, brushRadius, SPIRITS, gladeBuyable, gladePrice } from './sim.mjs?v=44';
+import { pixelize, newFrame, shadowOf, skirtOf, apronOf } from './pixel.mjs?v=44';
+import { duckCanvas, critterCanvas, spiritCanvas, NATIVE, SCALE, WALK_FRAMES, strideOf, impName } from './critters.mjs?v=44';
+import { steer, standable, overWater, escape } from './nav.mjs?v=44';
+import { trapCount } from './fishing.mjs?v=44';
+import { stallOf, PIP_ZONE, BRAM_ZONE } from './finds.mjs?v=44';
+import { grownOf, portalSpot, portalStage, PORTAL_ZONE } from './timber.mjs?v=44';
 const money = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'm' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -339,7 +339,8 @@ export function createRenderer(canvas, world, land, images) {
     if (b && (b.r !== r || !!b.l !== lyke)) { baked.delete(index); b = null; }
     if (!b) {
       // Fine-bladed chunks are large, so only the most recent are kept.
-      if (baked.size > CAP[r]) for (const key of baked.keys()) { baked.delete(key); superDirty[superOf(key)] = 1; if (baked.size <= CAP[r] * .75) break; }
+      // Over the cap, the oldest tiles that are not on screen go; a tile in view is never thrown away.
+      if (baked.size > CAP[r]) for (const key of baked.keys()) { if (onScreen.has(key)) continue; baked.delete(key); superDirty[superOf(key)] = 1; if (baked.size <= CAP[r] * .75) break; }
       const mk = () => { const c = document.createElement('canvas'); c.width = (FC + 18) * r; c.height = (FC + 14) * r; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; return { c, g }; };
       const m = mk(); b = { c: m.c, g: m.g, r, all: mk(), l: lyke ? mk() : null, l2: lyke ? mk() : null }; baked.set(index, b);
     }
@@ -410,7 +411,7 @@ export function createRenderer(canvas, world, land, images) {
   const chunksIn = (z, pad = 0) => { const out = [], x0 = cam.x - W / 2 / z - 12 - pad, x1 = cam.x + W / 2 / z + 12 + pad, y0 = cam.y - H / 2 / z - pad, y1 = cam.y + H / 2 / z + 14 + pad;
     for (let cy = Math.max(0, Math.floor(y0 / FC)); cy <= Math.min(FROWS - 1, Math.floor(y1 / FC)); cy++) for (let cx = Math.max(0, Math.floor(x0 / FC)); cx <= Math.min(FCOLS - 1, Math.floor(x1 / FC)); cx++) out.push(cy * FCOLS + cx);
     return out; };
-  let grassGaps = 0, grassTiles = 0, grassIn = 0; // for testing: on-screen grass tiles not baked yet
+  let grassGaps = 0, grassTiles = 0, grassIn = 0, grassHold = 0, onScreen = new Set(); // for testing: on-screen grass tiles not baked yet
   function drawFlora(s, time, dt, pointer) {
     const z = cam.z;
     if (grass === 'none') return;
@@ -418,13 +419,18 @@ export function createRenderer(canvas, world, land, images) {
     // Bake what is on screen first. Zoomed out, when no grass is drawn, bake much of the view ahead of time, nearest
     // the mouse first (the wheel zooms towards it), so the meadow is ready wherever the camera comes down. A frame
     // that is already running late bakes less; a frame with no grass to draw can afford more.
-    const want = bakeRes(), lyke = !!flora[0].strands, gaps = target > 0 && chunksIn(z).some(i => !baked.has(i) || baked.get(i).r !== want);
+    const want = bakeRes(), lyke = !!flora[0].strands, inView = chunksIn(z); onScreen = new Set(inView);
+    grassTiles = inView.length; grassGaps = target > 0 ? inView.filter(i => !baked.has(i)).length : 0; // (for testing)
+    const gaps = target > 0 && inView.some(i => !baked.has(i) || baked.get(i).r !== want);
     // Coming down from far out, the meadow waits until the tiles in view are ready, then fades in whole, rather than
     // appearing patch by patch.
-    if (!gaps || grassIn >= 1 || target < grassIn) grassIn += (target - grassIn) * (target < grassIn ? 1 : Math.min(1, dt * 9));
+    grassHold = gaps && grassIn < target ? grassHold + dt : 0;
+    if (!gaps || grassIn >= 1 || target < grassIn || grassHold > 2.5) grassIn += (target - grassIn) * (target < grassIn ? 1 : Math.min(1, dt * 9)); // never wait more than a moment
     const fade = grassIn;
-    const end = performance.now() + (gaps ? 14 : !fade ? 7 : dt > .02 ? 2 : 3.5);
-    const todo = chunksIn(Math.max(z, .45), z >= .6 ? 160 / z : 0).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
+    const end = performance.now() + (gaps ? 20 : !fade ? 7 : dt > .02 ? 2 : 3.5);
+    // A margin round the view is baked ahead: wide where tiles are cheap, one ring where they are capped and it fits.
+    const ring = z < .6 ? 0 : want === 1 ? 160 / z : (Math.sqrt(inView.length) + 2) ** 2 < CAP[want] * .8 ? FC : 0;
+    const todo = chunksIn(Math.max(z, .45), ring).filter(i => floraDirty[i] || !baked.has(i) || baked.get(i).r !== want);
     if (todo.length) {
       const P = pointer ? toWorld(pointer.x, pointer.y) : cam, mx = P.x / FC, my = P.y / FC, d = new Map();
       for (const i of todo) d.set(i, (i % FCOLS + .5 - mx) ** 2 + (Math.floor(i / FCOLS) + .5 - my) ** 2 * 1.4);
@@ -1238,7 +1244,7 @@ export function createRenderer(canvas, world, land, images) {
     // Wildlife already on the land arrives quietly, as on a fresh load. Used when the whole state is swapped.
     regreet() { greeted = false; critterAt = -1; arrived.clear(); duckFirst = undefined; },
     pets: () => critters.filter(c => PETS[c.kind]),
-    onSplash: null, onSeen: null, hearing, keyOf, grassGaps: () => [grassGaps, grassTiles],
+    onSplash: null, onSeen: null, hearing, keyOf, grassGaps: () => [grassGaps, grassTiles, grassIn, baked.size],
     // Butterflies, birds and leaping fish under a tap: the nearest one within reach, or null.
     hitWild(px, py) {
       let best = null, bd = Infinity;

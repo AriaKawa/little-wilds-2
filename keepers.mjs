@@ -1,11 +1,11 @@
 // Pip and Bramwell, played: the bug net (N), bugs out on the land, dig spots and the shovel, Pip's bug house,
 // Bramwell's museum, and their markets. Their quests run through the same dialogue as Old Tam's (angling.mjs);
 // the rules are in finds.mjs.
-import { ZONES, LANDS, CELL, CW, TW, TH, BEACH, KIND } from './world.mjs?v=43';
-import { FISH_BY, TIERS, ITEM_COLS, ITEM_ROWS, GIVERS, questState, questNeeds, conditions, waterAt, bagAdd, bagCount, priceOf, sellAll, bagWorth, STACK } from './fishing.mjs?v=43';
-import { BUGS, BUG_BY, NETS, rollBug, HOUSE_BONUS, houseBonus, houseMax, FINDS, FIND_BY, SETS, PIECES, setPieces, setDone, museumCount, museumBonus, museumMax, PIECE_BONUS, SET_BONUS, rollDig, assess, spawnDigs, DIG_ICON, DIG_SEEDS, SHOVELS, PIP_ZONE, BRAM_ZONE, stallOf } from './finds.mjs?v=43';
-import { icon } from './angling.mjs?v=43';
-import { portalSpot, portalStage, portalTotal, portalBonus, giveWood, PORTAL_ZONE, PORTAL_STAGES } from './timber.mjs?v=43';
+import { ZONES, LANDS, CELL, CW, TW, TH, BEACH, KIND } from './world.mjs?v=44';
+import { FISH_BY, TIERS, ITEM_COLS, ITEM_ROWS, GIVERS, questState, questNeeds, conditions, waterAt, bagAdd, bagCount, priceOf, sellAll, bagWorth, STACK } from './fishing.mjs?v=44';
+import { BUGS, BUG_BY, NETS, rollBug, HOUSE_BONUS, houseBonus, houseMax, FINDS, FIND_BY, SETS, PIECES, setPieces, setDone, museumCount, museumBonus, museumMax, PIECE_BONUS, SET_BONUS, rollDig, assess, spawnDigs, DIG_ICON, DIG_SEEDS, SHOVELS, PIP_ZONE, BRAM_ZONE, stallOf } from './finds.mjs?v=44';
+import { icon } from './angling.mjs?v=44';
+import { portalSpot, portalStage, portalTotal, portalBonus, giveWood, PORTAL_ZONE, PORTAL_STAGES } from './timber.mjs?v=44';
 const WOOD_ICON = 61, PORTAL_ICON = 63;
 const STAGE_NAMES = ['A ruin of rotten posts', 'The footings set', 'The pillars raised', 'The crossbeam lifted', 'The roof beam and ropes', 'Whole, and awake'];
 

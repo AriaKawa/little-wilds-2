@@ -2,8 +2,8 @@
 // sprouts nearby. A Woodkin fells grown trees for wood; each felled tree leaves a stump that sprouts again in time.
 // Wood rebuilds the old spirit portal in Birch Knoll, a gate of timber that stands facing you, stage by stage.
 // Rules only: the felling and the portal are drawn by render.mjs; the portal window lives in keepers.mjs.
-import { CW, CELL, TW, ZONES } from './world.mjs?v=43';
-import { markTree, unmarkTree } from './nav.mjs?v=43';
+import { CW, CELL, TW, ZONES } from './world.mjs?v=44';
+import { markTree, unmarkTree } from './nav.mjs?v=44';
 
 export const TREE_CAP = 160, GROWN = 9, SAPLING = 90, REGROW = 150, SEED_EVERY = 700, WOOD = 4, CHOP = 3.2;
 export const PORTAL_ZONE = 6; // Birch Knoll, in Hollow Vale
